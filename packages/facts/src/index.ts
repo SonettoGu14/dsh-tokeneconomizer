@@ -11,7 +11,7 @@
  * Injection rides the logged pre-step channel: one extra user-role message at
  * the first step of a session, and nothing at all when no fact qualifies.
  *
- * @module @gyk/dsh-te-facts
+ * @module @sonettogu14/dsh-te-facts
  */
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -44,7 +44,7 @@ import {
   writeJsonAtomic,
   type FactLifecycle,
   type ShellCall,
-} from '@gyk/dsh-te-core'
+} from '@sonettogu14/dsh-te-core'
 import { join } from 'node:path'
 
 /** Settings for the facts component. */

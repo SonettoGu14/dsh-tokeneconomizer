@@ -5,7 +5,7 @@ const coreSrc = fileURLToPath(new URL('./packages/core/src/index.ts', import.met
 
 export default defineConfig({
   resolve: {
-    alias: { '@gyk/dsh-te-core': coreSrc },
+    alias: { '@sonettogu14/dsh-te-core': coreSrc },
   },
   test: {
     include: ['packages/*/test/**/*.test.ts'],

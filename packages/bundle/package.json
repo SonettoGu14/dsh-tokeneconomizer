@@ -1,5 +1,5 @@
 {
-  "name": "@gyk/dsh-te",
+  "name": "@sonettogu14/dsh-te",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,10 +12,10 @@
     "dsh": ">=0.2.2-rc.3 <0.3.0"
   },
   "dependencies": {
-    "@gyk/dsh-te-core": "workspace:*",
-    "@gyk/dsh-te-cost": "workspace:*",
-    "@gyk/dsh-te-facts": "workspace:*",
-    "@gyk/dsh-te-prune": "workspace:*"
+    "@sonettogu14/dsh-te-core": "workspace:*",
+    "@sonettogu14/dsh-te-cost": "workspace:*",
+    "@sonettogu14/dsh-te-facts": "workspace:*",
+    "@sonettogu14/dsh-te-prune": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh": ">=0.2.2-rc.3"

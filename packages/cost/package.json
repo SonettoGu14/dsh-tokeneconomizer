@@ -1,5 +1,5 @@
 {
-  "name": "@gyk/dsh-te-cost",
+  "name": "@sonettogu14/dsh-te-cost",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -29,7 +29,7 @@
     }
   },
   "dependencies": {
-    "@gyk/dsh-te-core": "workspace:*",
+    "@sonettogu14/dsh-te-core": "workspace:*",
     "@deepseek-ai/schemastery": "^3.19.0"
   },
   "peerDependencies": {

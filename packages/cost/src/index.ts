@@ -12,7 +12,7 @@
  *
  * The component never changes a prompt: it only observes `session/event`.
  *
- * @module @gyk/dsh-te-cost
+ * @module @sonettogu14/dsh-te-cost
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -39,7 +39,7 @@ import {
   type RepoIdentity,
   type TokenBuckets,
   type TokenWeights,
-} from '@gyk/dsh-te-core'
+} from '@sonettogu14/dsh-te-core'
 import { join } from 'node:path'
 
 /** Cordis plugin name; it must match the `cordis.patch.yml` row id/name pair. */

@@ -2,4 +2,4 @@
 # Install: dsh plugin --profile <name> add link:<repo>/packages/prune
 - insert:
     - id: te-prune
-      name: '@gyk/dsh-te-prune'
+      name: '@sonettogu14/dsh-te-prune'

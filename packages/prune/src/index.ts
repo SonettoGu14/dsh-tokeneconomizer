@@ -12,7 +12,7 @@
  * cached request prefix, so changing it mid-session throws away the cache. A
  * stable set per session costs nothing; a set that shifts per step costs a lot.
  *
- * @module @gyk/dsh-te-prune
+ * @module @sonettogu14/dsh-te-prune
  */
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -20,7 +20,7 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { ToolExecution, ToolExecutionResult, ToolsService } from '@deepseek-ai/dsh-tools'
-import { readJson, repoKeyDirName, resolveRepoKey, stateRoot, writeJsonAtomic } from '@gyk/dsh-te-core'
+import { readJson, repoKeyDirName, resolveRepoKey, stateRoot, writeJsonAtomic } from '@sonettogu14/dsh-te-core'
 import { join } from 'node:path'
 
 /** Settings for the pruning component. */

@@ -4,7 +4,7 @@
  * Reports are read in a chat pane, so a count is rendered with one decimal and
  * a unit suffix above a thousand; exact integers stay exact below it.
  *
- * @module @gyk/dsh-te-core/format
+ * @module @sonettogu14/dsh-te-core/format
  */
 
 /** Render a token count as `999`, `12.3k`, `1.24M`. */

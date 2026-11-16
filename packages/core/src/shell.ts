@@ -15,7 +15,7 @@
  * Ported from the LLM-free half of TokenEconomizer's `microskills/envfacts.py`
  * (`form_repair` and `env_value` families).
  *
- * @module @gyk/dsh-te-core/shell
+ * @module @sonettogu14/dsh-te-core/shell
  */
 
 /** One shell invocation as the transcript recorded it. */

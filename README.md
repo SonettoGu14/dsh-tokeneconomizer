@@ -40,18 +40,18 @@ dsh plugin --profile <profile> add link:<repo>/packages/bundle
 `package.json` because every package declares `dsh.bundle.patch`. Confirm with:
 
 ```sh
-dsh --profile <profile> --dump-config | grep -A2 "== @gyk"
+dsh --profile <profile> --dump-config | grep -A2 "== @sonettogu14"
 ```
 
 Set `enabled: false` in the row's `config` to keep a component installed but
 dormant. The components have no dependency on each other: `cost`, `facts` and
-`prune` depend only on `@gyk/dsh-te-core`, and the one cross-component
+`prune` depend only on `@sonettogu14/dsh-te-core`, and the one cross-component
 interaction (`facts` reporting its own injected tokens to `cost`) is a soft,
 optional lookup — lose the ledger and facts still work.
 
 ## The components
 
-### `@gyk/dsh-te-cost` — cache-weighted accounting
+### `@sonettogu14/dsh-te-cost` — cache-weighted accounting
 
 Raw token totals mislead, because most input tokens are cache reads billed at a
 fraction of a fresh input token. This component folds the harness's own four
@@ -72,7 +72,7 @@ Unknown models fall back to a default weight table, recorded as
 `weightsSource: 'default'` rather than failing: a plugin must never be able to
 break a session over a price table.
 
-### `@gyk/dsh-te-facts` — repository facts, learned and retired
+### `@sonettogu14/dsh-te-facts` — repository facts, learned and retired
 
 Watches shell calls; when a session ends, a form that failed here plus a
 different form of the same intent that then worked is one fact (an
@@ -95,7 +95,7 @@ stops being injected — and a later session that contradicts it retires it.
 Ported constants: `K_PROMOTE=3`, `GAMMA=0.8`, `LAMBDA=5.0`, `FIRE_GATE=0.40`,
 `FIRE_MIN_N=4`.
 
-### `@gyk/dsh-te-prune` — stop sending tools nobody calls
+### `@sonettogu14/dsh-te-prune` — stop sending tools nobody calls
 
 Every tool definition rides along on every request. This component counts, per
 repository, how many sessions a tool has gone unused; after `idleSessions`
@@ -118,7 +118,7 @@ set it:
 
 ```yaml
 - id: te-facts
-  name: '@gyk/dsh-te-facts'
+  name: '@sonettogu14/dsh-te-facts'
   config:
     enabled: true
     maxFacts: 4
@@ -171,7 +171,7 @@ second session read:
 
 18,360 raw tokens against 9,472 equivalent ones: that gap is the whole reason the
 ledger folds buckets instead of summing `totalTokens`. A profile with **only**
-`@gyk/dsh-te-cost` installed boots the same way, so the components really are
+`@sonettogu14/dsh-te-cost` installed boots the same way, so the components really are
 independent.
 
 What no test can prove is the harness-level effect on token spend over many

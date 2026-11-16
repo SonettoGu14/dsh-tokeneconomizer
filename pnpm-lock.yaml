@@ -44,16 +44,16 @@ importers:
       '@deepseek-ai/dsh':
         specifier: '>=0.2.2-rc.3'
         version: 0.2.2-rc.3(5bcd165c6fea43a35900e01e8aabdc96)
-      '@gyk/dsh-te-core':
+      '@sonettogu14/dsh-te-core':
         specifier: workspace:*
         version: link:../core
-      '@gyk/dsh-te-cost':
+      '@sonettogu14/dsh-te-cost':
         specifier: workspace:*
         version: link:../cost
-      '@gyk/dsh-te-facts':
+      '@sonettogu14/dsh-te-facts':
         specifier: workspace:*
         version: link:../facts
-      '@gyk/dsh-te-prune':
+      '@sonettogu14/dsh-te-prune':
         specifier: workspace:*
         version: link:../prune
 
@@ -67,7 +67,7 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.19.0
         version: 3.19.0
-      '@gyk/dsh-te-core':
+      '@sonettogu14/dsh-te-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -92,7 +92,7 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.19.0
         version: 3.19.0
-      '@gyk/dsh-te-core':
+      '@sonettogu14/dsh-te-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -123,7 +123,7 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.19.0
         version: 3.19.0
-      '@gyk/dsh-te-core':
+      '@sonettogu14/dsh-te-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
