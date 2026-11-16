@@ -37,7 +37,7 @@ function sessionOf(id: string): Session {
 async function mount(config: Partial<Config> = {}) {
   const ctx = new Context()
   ctx.provide('commands', { register: () => () => {} } as never)
-  apply(ctx, { ...Config({}), ...config } as Config)
+  apply(ctx, { enabled: true, maxFacts: 4, maxChars: 600, ...config })
   await new Promise((resolve) => setTimeout(resolve, 0))
   return ctx
 }
@@ -72,7 +72,10 @@ async function storedFacts(): Promise<{
 /** Run the pre-step waterfall and return the admitted messages. */
 async function preStep(ctx: Context, session: Session, turn: number, step: number) {
   const base = { kind: 'enter' as const, messages: [] as unknown[] }
-  return (await ctx.waterfall(
+  // The context's event map expects a real Agent; the component only reads
+  // `agent.session`, so a loose view keeps the test honest without a driver.
+  const dispatch = ctx as unknown as { waterfall: (...args: unknown[]) => Promise<unknown> }
+  return (await dispatch.waterfall(
     'agent/pre-step',
     { agent: { session }, turn, step, messages: [], signal: undefined, modelSelection: undefined },
     async () => base,

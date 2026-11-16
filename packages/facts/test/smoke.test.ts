@@ -7,6 +7,8 @@ describe('dsh-te-facts', () => {
   })
 
   it('resolves its documented defaults', () => {
-    expect(Config({}).enabled).toBe(true)
+    const config = Config({ enabled: true, maxFacts: 4, maxChars: 600 })
+    expect(config.enabled).toBe(true)
+    expect(config.maxFacts).toBe(4)
   })
 })

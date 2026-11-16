@@ -7,6 +7,12 @@ describe('dsh-te-prune', () => {
   })
 
   it('resolves its documented defaults', () => {
-    expect(Config({}).enabled).toBe(false)
+    const config = Config({ enabled: false, idleSessions: 5, maxHidden: 8, protected: [] })
+    expect(config.idleSessions).toBe(5)
+    expect(config.maxHidden).toBe(8)
+  })
+
+  it('ships with pruning switched off', () => {
+    expect(Config({ enabled: false, idleSessions: 5, maxHidden: 8, protected: [] }).enabled).toBe(false)
   })
 })
