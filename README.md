@@ -213,3 +213,28 @@ packages/facts/   fact watcher + pre-step injection + /te-facts
 packages/prune/   idle counters + scoped tool restrictions + /te-prune
 packages/bundle/  the install-all patch
 ```
+
+## Citation and license
+
+The mechanisms implemented here come from this paper; cite it if you use them:
+
+```bibtex
+@misc{li2026tokeneconomizer,
+  title         = {{TokenEconomizer}: Experience-Driven Black-Box Cost Control for Coding Agents},
+  author        = {Li, Aaron J. and Xu, Weijia and Singh, Chandan and Chen, Zixiao and
+                   Inala, Jeevana Priya and Siska, Charlotte and Tamersoy, Acar and Yu, Bin and
+                   Stoica, Ion and Galley, Michel and Gao, Jianfeng},
+  year          = {2026},
+  eprint        = {2610.22732},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CL},
+  url           = {https://arxiv.org/abs/2610.22732}
+}
+```
+
+This project is licensed under the Apache License, Version 2.0; see
+[`LICENSE`](LICENSE). It is an independent implementation of mechanisms from
+[microsoft/TokenEconomizer](https://github.com/microsoft/TokenEconomizer)
+(Apache-2.0, Copyright (c) Microsoft Corporation and contributors); no source
+file was copied verbatim. [`NOTICE`](NOTICE) records the attribution and which
+parts are derived.
