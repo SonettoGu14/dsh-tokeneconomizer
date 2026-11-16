@@ -11,9 +11,15 @@
  * @module @gyk/dsh-te-core/storage
  */
 
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
+
+/** Owner-only directory mode: state names paths, costs and learned claims. */
+const DIRECTORY_MODE = 0o700
+/** Owner-only file mode: nothing here is meant to be world-readable. */
+const FILE_MODE = 0o600
 
 /** The plugin's directory name inside the DSH home. */
 export const STATE_DIR_NAME = 'dsh-tokeneconomizer'
@@ -29,7 +35,10 @@ export function resolveDshHome(env: NodeJS.ProcessEnv = process.env, home: strin
   const raw = env.DSH_HOME
   if (raw !== undefined && raw.trim() !== '') {
     const expanded = expandHome(raw.trim(), home)
-    return isAbsolute(expanded) ? expanded : join(process.cwd(), expanded)
+    // A relative DSH_HOME would silently split state per launch directory — and
+    // inside a checkout it would land in the repository, where git can publish
+    // it. Resolve it against the home directory instead of the cwd.
+    return isAbsolute(expanded) ? expanded : join(home, expanded)
   }
   return join(home, '.dsh')
 }
@@ -54,7 +63,11 @@ export function stateRoot(env: NodeJS.ProcessEnv = process.env, home: string = h
  */
 export async function readJson<T>(path: string): Promise<T | undefined> {
   try {
-    return JSON.parse(await readFile(path, 'utf8')) as T
+    const parsed: unknown = JSON.parse(await readFile(path, 'utf8'))
+    // A JSON `null` or a bare scalar is corruption, not state: callers type the
+    // result as an object and would throw on the next property read.
+    if (parsed === null || typeof parsed !== 'object') return undefined
+    return parsed as T
   } catch {
     return undefined
   }
@@ -65,11 +78,17 @@ export async function readJson<T>(path: string): Promise<T | undefined> {
  * target. Creates parent directories as needed.
  */
 export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const temp = `${path}.${process.pid}.${Date.now()}.tmp`
+  await mkdir(dirname(path), { recursive: true, mode: DIRECTORY_MODE })
+  // A random suffix, not the timestamp: two writes to one path in the same
+  // millisecond would otherwise rename the same temp file twice and the loser
+  // would fail with ENOENT.
+  const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
   try {
-    await writeFile(temp, `${JSON.stringify(value)}\n`, 'utf8')
+    await writeFile(temp, `${JSON.stringify(value)}\n`, { encoding: 'utf8', mode: FILE_MODE })
     await rename(temp, path)
+    await chmod(path, FILE_MODE).catch(() => {
+      // Best effort: the file may live on a filesystem without POSIX modes.
+    })
   } catch (error) {
     await rm(temp, { force: true })
     throw error

@@ -107,7 +107,7 @@ describe('wasteRecurred', () => {
 
   it('sees a missing variable come back', () => {
     const calls = [{ command: 'python build.py', ok: false, output: 'API_KEY is not set' }]
-    expect(wasteRecurred(calls, 'env-value:python:API_KEY')).toBe(true)
-    expect(wasteRecurred(calls, 'env-value:python:OTHER_KEY')).toBe(false)
+    expect(wasteRecurred(calls, 'env-value:python build.py:API_KEY')).toBe(true)
+    expect(wasteRecurred(calls, 'env-value:python build.py:OTHER_KEY')).toBe(false)
   })
 })

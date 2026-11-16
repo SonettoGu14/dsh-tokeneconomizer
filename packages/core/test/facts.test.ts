@@ -34,7 +34,7 @@ describe('promotion', () => {
   })
 
   it('does not resurrect a retired fact', () => {
-    const retired = contradict(active(3), 4)
+    const retired = contradict(contradict(active(3), 4), 5)
     expect(retired.state).toBe('retired')
     expect(confirm(retired, 5).state).toBe('retired')
   })
@@ -85,14 +85,26 @@ describe('injection gate', () => {
 })
 
 describe('contradiction', () => {
-  it('retires an active fact on one clean contradiction', () => {
-    const life = contradict(active(3), 4)
+  it('survives one contradiction, so one noisy success is not a reversal', () => {
+    const once = contradict(active(3), 4)
+    expect(once.state).toBe('active')
+    expect(score(once, 4)).toBeLessThan(0)
+  })
+
+  it('retires an active fact once two distinct tasks contradict it', () => {
+    const life = contradict(contradict(active(3), 4), 5)
     expect(life.state).toBe('retired')
   })
 
+  it('counts one contradiction per task even if reported twice', () => {
+    const life = contradict(contradict(active(3), 4), 4)
+    expect(life.state).toBe('active')
+    expect(life.contradicts).toEqual([4])
+  })
+
   it('drops an unproven candidate rather than promoting it later', () => {
-    const life = contradict(confirm(NEW_LIFECYCLE, 1), 2)
+    const life = contradict(contradict(confirm(NEW_LIFECYCLE, 1), 2), 3)
     expect(life.state).toBe('retired')
-    expect(score(life, 2)).toBeLessThan(0)
+    expect(score(life, 3)).toBeLessThan(0)
   })
 })

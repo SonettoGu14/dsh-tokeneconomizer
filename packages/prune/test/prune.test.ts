@@ -14,6 +14,7 @@ let repo: string
 let savedHome: string | undefined
 let restricted: { deny?: readonly string[] }[]
 let lifted: number
+let toolsStub: unknown
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'dsh-te-prune-'))
@@ -36,6 +37,15 @@ function sessionOf(id: string): Session {
   return { id, header: { cwd: repo } } as unknown as Session
 }
 
+/**
+ * An agent whose `ctx` resolves services the way the real agent scope does.
+ * `tools.restrict` only exists on an agent scope, so the plugin must not reach
+ * for the plugin's own context here.
+ */
+function agentOf(target: Session, tools: unknown): { session: Session; ctx: { get: (name: string) => unknown } } {
+  return { session: target, ctx: { get: (name: string) => (name === 'tools' ? tools : undefined) } }
+}
+
 /** Mount the component with stub command and tool services. */
 async function mount(config: Partial<Config> = {}) {
   const ctx = new Context()
@@ -49,6 +59,7 @@ async function mount(config: Partial<Config> = {}) {
       }
     },
   } as never)
+  toolsStub = ctx.get('tools')
   apply(ctx, { enabled: true, idleSessions: 3, maxHidden: 8, protected: [], ...config })
   await new Promise((resolve) => setTimeout(resolve, 0))
   return ctx
@@ -58,7 +69,7 @@ async function mount(config: Partial<Config> = {}) {
 function used(ctx: Context, session: Session, tool: string): void {
   ctx.emit(
     'tools/result',
-    { name: tool, arguments: {}, agent: { session } } as never,
+    { name: tool, arguments: {}, agent: agentOf(session, toolsStub) } as never,
     { isError: false, content: [] } as never,
   )
 }
@@ -70,14 +81,18 @@ async function session(ctx: Context, id: string, tools: string[] = ['bash']): Pr
   await ctx.tePrune.settle(target)
 }
 
-/** Run the pre-step waterfall for a fresh session. */
-async function preStep(ctx: Context, session: Session, turn = 1, step = 1): Promise<void> {
-  const dispatch = ctx as unknown as { waterfall: (...args: unknown[]) => Promise<unknown> }
-  await dispatch.waterfall(
-    'agent/pre-step',
-    { agent: { session }, turn, step, messages: [], signal: undefined, modelSelection: undefined },
-    async () => ({ kind: 'enter', messages: [] }),
-  )
+/**
+ * Announce a new agent, which is when the real harness first has a scoped
+ * context and has not yet assembled the first prompt.
+ */
+async function created(ctx: Context, agent: unknown): Promise<void> {
+  const dispatch = ctx as unknown as { serial: (...args: unknown[]) => Promise<unknown> }
+  await dispatch.serial('agent/created', { agent, source: 'start' })
+}
+
+/** Create a fresh agent for one session through the real event path. */
+async function createAgent(ctx: Context, session: Session): Promise<void> {
+  await created(ctx, agentOf(session, toolsStub))
 }
 
 /** Read the persisted pruning state. */
@@ -119,14 +134,14 @@ describe('hiding', () => {
     const ctx = await mount({ idleSessions: 3 })
     await session(ctx, 's1')
     await session(ctx, 's2')
-    await preStep(ctx, sessionOf('s3'))
+    await createAgent(ctx, sessionOf('s3'))
     expect(restricted).toEqual([])
   })
 
   it('hides an idle tool once the threshold is reached', async () => {
     const ctx = await mount({ idleSessions: 3 })
     for (const id of ['s1', 's2', 's3']) await session(ctx, id)
-    await preStep(ctx, sessionOf('s4'))
+    await createAgent(ctx, sessionOf('s4'))
     expect(restricted).toHaveLength(1)
     expect(restricted[0]?.deny).toContain('web_search')
     expect(restricted[0]?.deny).toContain('web_fetch')
@@ -135,7 +150,7 @@ describe('hiding', () => {
   it('never hides the harness basics', async () => {
     const ctx = await mount({ idleSessions: 2 })
     for (const id of ['s1', 's2']) await session(ctx, id, [])
-    await preStep(ctx, sessionOf('s3'))
+    await createAgent(ctx, sessionOf('s3'))
     expect(restricted[0]?.deny).not.toContain('bash')
     expect(restricted[0]?.deny).not.toContain('read')
   })
@@ -143,7 +158,7 @@ describe('hiding', () => {
   it('hides at most maxHidden tools', async () => {
     const ctx = await mount({ idleSessions: 2, maxHidden: 1 })
     for (const id of ['s1', 's2']) await session(ctx, id)
-    await preStep(ctx, sessionOf('s3'))
+    await createAgent(ctx, sessionOf('s3'))
     expect(restricted[0]?.deny).toHaveLength(1)
   })
 
@@ -151,8 +166,8 @@ describe('hiding', () => {
     const ctx = await mount({ idleSessions: 2 })
     for (const id of ['s1', 's2']) await session(ctx, id)
     const live = sessionOf('s3')
-    await preStep(ctx, live, 1, 1)
-    await preStep(ctx, live, 2, 3)
+    await createAgent(ctx, live)
+    await createAgent(ctx, live)
     expect(restricted).toHaveLength(1)
   })
 
@@ -160,7 +175,7 @@ describe('hiding', () => {
     const ctx = await mount({ idleSessions: 2 })
     for (const id of ['s1', 's2']) await session(ctx, id)
     const live = sessionOf('s3')
-    await preStep(ctx, live)
+    await createAgent(ctx, live)
     await ctx.tePrune.settle(live)
     expect(lifted).toBe(1)
   })
@@ -172,7 +187,72 @@ describe('restore', () => {
     for (const id of ['s1', 's2']) await session(ctx, id)
     expect(await ctx.tePrune.restore(sessionOf('s3'))).toContain('web_search')
     await session(ctx, 's3')
-    await preStep(ctx, sessionOf('s4'))
+    await createAgent(ctx, sessionOf('s4'))
+    expect(restricted).toEqual([])
+  })
+})
+
+
+describe('session lifecycle', () => {
+  it('ages the counters from the disposed event, not only from a direct settle call', async () => {
+    const ctx = await mount({ idleSessions: 3 })
+    const session = sessionOf('s1')
+    used(ctx, session, 'bash')
+    ctx.emit('session/disposed', session)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    const state = await stored()
+    expect(state.tools['web_search']?.idle).toBe(1)
+    expect(state.tools['bash']?.idle).toBe(0)
+  })
+})
+
+describe('scope discipline', () => {
+  it('restricts through the agent scope, never the plugin context', async () => {
+    const ctx = await mount({ idleSessions: 2 })
+    // The registry rejects a context-global restriction outright; make the
+    // global stub behave the same so reaching for `this.ctx` would fail loudly.
+    const global = ctx.get('tools') as { restrict: (filter: unknown) => () => void }
+    global.restrict = () => {
+      throw new Error('tools.restrict() requires a scoped context (agent.ctx)')
+    }
+    toolsStub = {
+      schemas: () => AVAILABLE.map((name) => ({ name })),
+      restrict: (filter: { deny?: readonly string[] }) => {
+        restricted.push(filter)
+        return () => {
+          lifted += 1
+        }
+      },
+    }
+    for (const id of ['s1', 's2']) await session(ctx, id)
+    await createAgent(ctx, sessionOf('s3'))
+    expect(restricted).toHaveLength(1)
+  })
+
+  it('leaves the tool set alone when the registry rejects the filter', async () => {
+    const ctx = await mount({ idleSessions: 2 })
+    toolsStub = {
+      schemas: () => AVAILABLE.map((name) => ({ name })),
+      restrict: () => {
+        throw new Error('names unknown global tool "web_search"')
+      },
+    }
+    for (const id of ['s1', 's2']) await session(ctx, id)
+    await expect(createAgent(ctx, sessionOf('s3'))).resolves.toBeUndefined()
+    expect(restricted).toEqual([])
+  })
+})
+
+describe('restore permanence', () => {
+  it('does not re-hide a restored tool once it is idle again', async () => {
+    const ctx = await mount({ idleSessions: 2 })
+    for (const id of ['s1', 's2']) await session(ctx, id)
+    await ctx.tePrune.restore(sessionOf('s3'))
+    // Enough idle sessions to qualify every other tool twice over.
+    for (const id of ['s4', 's5', 's6', 's7']) await session(ctx, id)
+    await createAgent(ctx, sessionOf('s8'))
+    // Every candidate was restored, and four more idle sessions would qualify
+    // them again: an empty deny list here is what "restored forever" means.
     expect(restricted).toEqual([])
   })
 })

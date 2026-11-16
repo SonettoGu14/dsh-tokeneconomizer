@@ -19,15 +19,21 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'dsh-te-facts': { kind: 'dsh-te-facts'; form: 'notice' }
+  }
+}
 import type { ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import {
   NEW_LIFECYCLE,
   confirm,
   contradict,
   contradicted,
+  exercised,
   extractFacts,
   injectable,
-  intentOf,
   readJson,
   recordExercise,
   repoKeyDirName,
@@ -83,7 +89,35 @@ interface SessionWatch {
   injected?: string[]
 }
 
-/** Text blocks of a tool result, in order. */
+/** How many facts one repository may keep; lowest-value facts go first. */
+const FACT_CAP = 200
+
+/**
+ * Whether one stored entry still has the shape this version understands.
+ *
+ * A hand-edited, truncated or older file must degrade to "that entry is gone",
+ * not to a throw on the step-1 hot path.
+ */
+function isStoredFact(value: unknown): value is StoredFact {
+  if (value === null || typeof value !== 'object') return false
+  const fact = value as Partial<StoredFact>
+  return (
+    typeof fact.key === 'string' &&
+    typeof fact.text === 'string' &&
+    (fact.family === 'form-repair' || fact.family === 'env-value') &&
+    (fact.state === 'candidate' || fact.state === 'active' || fact.state === 'retired') &&
+    Array.isArray(fact.confirms) &&
+    Array.isArray(fact.contradicts) &&
+    typeof fact.fired === 'number' &&
+    typeof fact.firedWaste === 'number'
+  )
+}
+
+/** Whether this session is a subagent child rather than a top-level task. */
+function isSubagent(session: Session): boolean {
+  return session.header?.origin === 'subagent'
+}
+
 function textOf(result: ToolExecutionResult): string {
   return result.content
     .map((block) => (block.type === 'text' ? block.text : ''))
@@ -133,6 +167,9 @@ export class Facts extends Service {
 
   private readonly watching = new Map<string, SessionWatch>()
 
+  /** Settles in flight, awaited by the `session/flush` durability checkpoint. */
+  private readonly pending = new Map<string, Promise<void>>()
+
   private readonly repos = new Map<string, RepoFacts>()
 
   constructor(ctx: Context, private readonly config: Config) {
@@ -146,14 +183,36 @@ export class Facts extends Service {
     this.ctx.on('agent/pre-step', async (payload, next) => {
       const decision = await next()
       if (decision.kind !== 'enter') return decision
-      const message = await this.injectedMessage(payload.agent, payload.turn, payload.step)
+      if (isSubagent(payload.agent.session)) return decision
+      let message: ReturnType<typeof createUserMessage> | undefined
+      try {
+        message = await this.injectedMessage(payload.agent, payload.turn, payload.step)
+      } catch (error) {
+        // Injection is an optimization: a damaged state file must never stop a
+        // session from starting.
+        this.ctx.logger('dsh-te-facts').warn('facts not injected: %s', String(error))
+        return decision
+      }
       if (message === undefined) return decision
-      return { kind: 'enter', messages: [...decision.messages, message] }
+      // Spread the decision: it may carry `startsRequestSeries`, and dropping it
+      // would move the prefix-cache boundary for every listener after us.
+      return { ...decision, messages: [...decision.messages, message] }
     })
     this.ctx.on('session/disposed', (session) => {
-      this.settle(session).catch(() => {
-        // A learning pass must never take the session down with it.
-      })
+      // Teardown does not await listeners, so the write is drained by the
+      // awaited `session/flush` checkpoint instead of racing the process exit.
+      this.pending.set(
+        session.id,
+        this.settle(session)
+          .catch((error: unknown) => {
+            // A learning pass must never take the session down with it.
+            this.ctx.logger('dsh-te-facts').warn('facts not settled: %s', String(error))
+          })
+          .finally(() => this.pending.delete(session.id)),
+      )
+    })
+    this.ctx.on('session/flush', async () => {
+      await Promise.all([...this.pending.values()])
     })
     this.ctx.effect(() =>
       this.ctx.commands.register({
@@ -191,7 +250,7 @@ export class Facts extends Service {
     const stored = await readJson<RepoFacts>(repoFactsPath(key))
     const repo: RepoFacts =
       stored !== undefined && stored.version === 1 && Array.isArray(stored.facts)
-        ? stored
+        ? { ...stored, key, facts: stored.facts.filter(isStoredFact) }
         : { version: 1, key, tasks: 0, facts: [] }
     this.repos.set(key, repo)
     return repo
@@ -221,7 +280,7 @@ export class Facts extends Service {
     this.bill(session, text)
     return createUserMessage({
       content: [{ type: 'text', text }],
-      source: { kind: 'dsh-te-facts', form: 'facts' } as never,
+      source: { kind: 'dsh-te-facts', form: 'notice' },
     })
   }
 
@@ -238,6 +297,9 @@ export class Facts extends Service {
   async settle(session: Session): Promise<void> {
     const watch = this.watching.get(session.id)
     this.watching.delete(session.id)
+    // A subagent child is a delegation of the session that already counts:
+    // folding it in would inflate the task ordinal that promotions are keyed on.
+    if (isSubagent(session)) return
     const repo = await this.repoOf(session)
     const ordinal = repo.tasks + 1
     const calls = watch?.calls ?? []
@@ -245,9 +307,9 @@ export class Facts extends Service {
 
     for (const fact of [...repo.facts]) {
       if (fact.state === 'retired') continue
-      const exercised = calls.some((call) => intentOf(call.command) === fact.intent)
+      const arose = exercised(calls, fact.key)
       const waste = wasteRecurred(calls, fact.key)
-      let next: StoredFact = { ...fact, ...recordExercise(fact, exercised, waste) }
+      let next: StoredFact = { ...fact, ...recordExercise(fact, arose, waste) }
       if (contradicted(calls, fact.key)) {
         // The claim was false here: fail toward retirement, never toward
         // re-injection of something the repository has already disproved.
@@ -259,7 +321,14 @@ export class Facts extends Service {
     }
 
     for (const candidate of learned.values()) {
-      if (repo.facts.some((fact) => fact.key === candidate.key)) continue
+      const known = repo.facts.find((fact) => fact.key === candidate.key)
+      if (known !== undefined && known.state !== 'retired') continue
+      if (known !== undefined) {
+        // Retired is not permanent: a repository can change (tooling added, env
+        // fixed, then broken again). Re-learn from scratch rather than resurrect
+        // the old record, so the promotion and firing evidence starts clean.
+        repo.facts.splice(repo.facts.indexOf(known), 1)
+      }
       // The session that taught us the fact exercised it too: it saw both the
       // failure and the repair, so it is the first entry in the firing record.
       repo.facts.push({
@@ -267,6 +336,18 @@ export class Facts extends Service {
         ...candidate,
         confirms: [ordinal],
       })
+    }
+
+    if (repo.facts.length > FACT_CAP) {
+      // Keep what is provably useful longest: retired entries go first, then the
+      // lowest-scoring candidates.
+      const ranked = [...repo.facts].sort((left, right) => {
+        const retiredLeft = left.state === 'retired' ? 0 : 1
+        const retiredRight = right.state === 'retired' ? 0 : 1
+        if (retiredLeft !== retiredRight) return retiredLeft - retiredRight
+        return score(left, ordinal) - score(right, ordinal)
+      })
+      repo.facts = ranked.slice(ranked.length - FACT_CAP)
     }
 
     repo.tasks = ordinal

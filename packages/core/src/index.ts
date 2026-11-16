@@ -13,7 +13,11 @@ export {
   DEFAULT_WEIGHTS,
   DEEPSEEK_FLASH_WEIGHTS,
   DEEPSEEK_PRO_WEIGHTS,
+  CLAUDE_5_5_WEIGHTS,
   CLAUDE_5_WEIGHTS,
+  CLAUDE_FABLE_WEIGHTS,
+  GPT_5_3_CODEX_WEIGHTS,
+  GPT_5_5_WEIGHTS,
   GPT_5_6_SOL_WEIGHTS,
   PRO_FOLDED_INTO_FLASH_AT_MS,
   weightsFor,
@@ -32,8 +36,8 @@ export {
 } from './cost.ts'
 export type { CostAccumulator, TokenBuckets, UsageSample } from './cost.ts'
 
-export { gitOriginRemote, normalizeRemoteUrl, repoKeyDirName, resolveRepoKey } from './repo-key.ts'
-export type { RepoIdentity, RepoKeySource } from './repo-key.ts'
+export { gitOriginRemote, gitTopLevel, normalizeRemoteUrl, repoKeyDirName, resolveRepoKey } from './repo-key.ts'
+export type { RemoteReader, RepoIdentity, RepoKeySource, TopLevelReader } from './repo-key.ts'
 
 export { formatTokens } from './format.ts'
 
@@ -43,7 +47,8 @@ export {
   FIRE_GATE,
   FIRE_MIN_N,
   GAMMA,
-  HARD_KILL,
+  CONTRADICT_STREAK,
+  EVIDENCE_WINDOW,
   K_PROMOTE,
   LAMBDA,
   NEW_LIFECYCLE,
@@ -57,5 +62,14 @@ export {
 } from './facts.ts'
 export type { FactLifecycle, FactState } from './facts.ts'
 
-export { contradicted, errorClassOf, extractFacts, formOf, intentOf, missingEnvOf, wasteRecurred } from './shell.ts'
+export {
+  contradicted,
+  errorClassOf,
+  exercised,
+  extractFacts,
+  formOf,
+  intentOf,
+  missingEnvOf,
+  wasteRecurred,
+} from './shell.ts'
 export type { FactCandidate, ShellCall } from './shell.ts'

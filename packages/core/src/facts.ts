@@ -23,8 +23,23 @@ export const GAMMA = 0.8
 export const LAMBDA = 5
 /** Below this score an active fact is retired. */
 export const SCORE_FLOOR = 0
-/** A high-stakes fact dies on one clean contradiction instead of decaying. */
-export const HARD_KILL = true
+/**
+ * Contradictions in this many distinct tasks before a fact dies.
+ *
+ * One noisy success is not evidence: a suite that happened to need none of the
+ * missing packages, or a wrapper that happened to work, should not erase a fact
+ * that three earlier tasks confirmed. The reference implementation uses the same
+ * two-strike rule for form repairs.
+ */
+export const CONTRADICT_STREAK = 2
+/**
+ * Evidence older than this many tasks is dropped.
+ *
+ * A confirmation from a year ago says little about the repository today, and an
+ * unbounded array is a memory and serialization problem in a long-lived repo.
+ */
+export const EVIDENCE_WINDOW = 20
+
 /** Injected facts must still be paying for themselves this often. */
 export const FIRE_GATE = 0.4
 /** ... and only after this many exercised tasks, so one bad session cannot kill it. */
@@ -105,7 +120,7 @@ export function injectable(life: FactLifecycle, now: number): boolean {
 export function confirm(life: FactLifecycle, now: number): FactLifecycle {
   if (life.state === 'retired') return life
   if (life.confirms.includes(now)) return life
-  const confirms = [...life.confirms, now]
+  const confirms = [...life.confirms, now].slice(-EVIDENCE_WINDOW)
   const promoted = life.state === 'active' || confirms.length >= K_PROMOTE
   return {
     ...life,
@@ -117,9 +132,10 @@ export function confirm(life: FactLifecycle, now: number): FactLifecycle {
 /**
  * Fold one contradiction.
  *
- * A high-stakes fact dies immediately; everything else decays and is retired
- * once its score is spent. Retired is terminal for this build: a fact that
- * comes back should be re-learned, not resurrected with a stale history.
+ * A contradiction costs `LAMBDA` confirmations, and a fact is retired once its
+ * score is spent — but only after contradictions in `CONTRADICT_STREAK` distinct
+ * tasks. Retired is terminal for this build: a fact that comes back should be
+ * re-learned, not resurrected with a stale history.
  *
  * @param life - lifecycle so far.
  * @param now - the task ordinal the contradiction belongs to.
@@ -127,10 +143,11 @@ export function confirm(life: FactLifecycle, now: number): FactLifecycle {
  */
 export function contradict(life: FactLifecycle, now: number): FactLifecycle {
   if (life.state === 'retired') return life
-  const contradicts = [...life.contradicts, now]
+  if (life.contradicts.includes(now)) return life
+  const contradicts = [...life.contradicts, now].slice(-EVIDENCE_WINDOW)
   const next: FactLifecycle = { ...life, contradicts }
-  if (life.state === 'active' && HARD_KILL) return { ...next, state: 'retired' }
-  if (score(next, now) <= SCORE_FLOOR && next.confirms.length > 0) return { ...next, state: 'retired' }
+  if (contradicts.length < CONTRADICT_STREAK) return next
+  if (score(next, now) <= SCORE_FLOOR) return { ...next, state: 'retired' }
   return next
 }
 

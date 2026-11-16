@@ -38,7 +38,12 @@ function usageEvent(usage: Record<string, number>): SessionEvent {
 }
 
 let ctx: Context
-let registrations: { name: string; description: string }[]
+let registrations: {
+  name: string
+  description: string
+  input?: { hint?: string }
+  handler: (invocation: { agent: { session: Session }; rawInput: string }) => unknown
+}[]
 let home: string
 let savedHome: string | undefined
 
@@ -49,7 +54,7 @@ beforeEach(async () => {
   ctx = new Context()
   registrations = []
   ctx.provide('commands', {
-    register: (definition: { name: string; description: string }) => {
+    register: (definition: (typeof registrations)[number]) => {
       registrations.push(definition)
       return () => {}
     },
@@ -135,5 +140,53 @@ describe('dsh-te-cost ledger', () => {
   it('contributes nothing when disabled', async () => {
     await mount(ctx, { enabled: false, persist: false })
     expect(ctx.teCost).toBeUndefined()
+  })
+})
+
+describe('session lifecycle and the command', () => {
+  it('writes the repo ledger from the disposed event, not by hand', async () => {
+    await mount(ctx, { enabled: true, persist: true })
+    const session = fakeSession('sess-0006', '/tmp/repo-disposed')
+    ctx.emit('session/event', session, routeEvent('deepseek', 'deepseek-v4.1-flash'))
+    ctx.emit('session/event', session, usageEvent({ inputTokens: 700, outputTokens: 0 }))
+    ctx.emit('session/disposed', session)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const record = JSON.parse(
+      await readFile(join(stateRoot(), 'repos', repoKeyDirName('path:/tmp/repo-disposed'), 'cost.json'), 'utf8'),
+    )
+    expect(record.sessions).toBe(1)
+    expect(record.equivalent).toBeCloseTo(700, 6)
+  })
+
+  it('answers /te-cost repo with the stored repository total', async () => {
+    await mount(ctx, { enabled: true, persist: true })
+    const session = fakeSession('sess-0007', '/tmp/repo-command')
+    ctx.emit('session/event', session, routeEvent('deepseek', 'deepseek-v4.1-flash'))
+    ctx.emit('session/event', session, usageEvent({ inputTokens: 2000, outputTokens: 0 }))
+    await ctx.teCost.settle(session)
+    const definition = registrations[0]
+    const result = (await definition?.handler({ agent: { session }, rawInput: 'repo' })) as {
+      kind: string
+      text: string
+    }
+    expect(result.kind).toBe('success')
+    expect(result.text).toContain('repo path:/tmp/repo-command')
+    expect(result.text).toContain('2.0k eq')
+    expect(definition?.input?.hint).toContain('repo')
+  })
+
+  it('counts cache writes in the session and the report', async () => {
+    await mount(ctx, { enabled: true, persist: false })
+    const session = fakeSession('sess-0008', '/tmp/repo')
+    ctx.emit('session/event', session, routeEvent('deepseek', 'deepseek-v4.1-flash'))
+    ctx.emit(
+      'session/event',
+      session,
+      usageEvent({ inputTokens: 0, cacheWriteTokens: 100, cacheReadTokens: 0, outputTokens: 0 }),
+    )
+    const snapshot = ctx.teCost.sessionSnapshot(session)
+    expect(snapshot.buckets.cacheWrite).toBe(100)
+    // flash writes cache at 1x fresh input
+    expect(snapshot.equivalent).toBeCloseTo(100, 6)
   })
 })

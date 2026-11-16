@@ -14,7 +14,17 @@ three of its mechanisms against a plugin API TokenEconomizer did not have.
 
 ## Install
 
-One component, on its own — that is a supported way to use this:
+From a checkout, build once first: a `link:` install links sources and keeps
+their `node_modules`, but it does not run the build for you, and the packages
+resolve their entry points from `lib/`.
+
+```sh
+pnpm install
+pnpm build          # tsc -b -> packages/*/lib
+```
+
+Then install the component, or components, into a profile. One component, on its
+own — that is a supported way to use this:
 
 ```sh
 dsh plugin --profile <profile> add link:<repo>/packages/cost
@@ -58,8 +68,9 @@ the provider's real price ratios.
   moving cost into the plugin.
 - `/te-cost [session|repo]` prints the breakdown.
 
-Unknown models fall back to a default weight table and a warning instead of
-failing: a plugin must never be able to break a session over a price table.
+Unknown models fall back to a default weight table, recorded as
+`weightsSource: 'default'` rather than failing: a plugin must never be able to
+break a session over a price table.
 
 ### `@gyk/dsh-te-facts` — repository facts, learned and retired
 
@@ -77,7 +88,8 @@ stops being injected — and a later session that contradicts it retires it.
 - Injects through the logged pre-step channel: one extra user-role message at
   the first step of a session, nothing at all when no fact qualifies, capped at
   4 facts / 600 characters.
-- Stores digests and file *basenames* only, never file contents.
+- Stores the repair itself — the failing and working command forms of one intent,
+  plus environment variable *names*. Never file contents, never output text.
 - `/te-facts` lists what it knows, with state, score and firing rate.
 
 Ported constants: `K_PROMOTE=3`, `GAMMA=0.8`, `LAMBDA=5.0`, `FIRE_GATE=0.40`,

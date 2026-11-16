@@ -7,6 +7,11 @@
  * and impossible to hallucinate — the price is that it only sees repairs the
  * session already performed.
  *
+ * Both families are keyed by the *form* that failed, not by a loose intent: two
+ * invocations of the same tool are not interchangeable evidence, so a successful
+ * `python --version` can neither confirm nor contradict a claim about
+ * `python build.py`.
+ *
  * Ported from the LLM-free half of TokenEconomizer's `microskills/envfacts.py`
  * (`form_repair` and `env_value` families).
  *
@@ -39,26 +44,90 @@ const ERROR_PHRASES: Record<string, string> = {
   'missing-env': 'a missing-environment error',
   permission: 'a permission error',
   'import-error': 'an import error',
+  'type-error': 'a compiler error',
+  'key-error': 'a KeyError',
 }
 
 /** Environment assignments a command may carry in front of the executable. */
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/
 
-/** Wrappers whose second word is the real executable. */
+/** Wrappers whose later word is the real executable. */
 const WRAPPERS = new Set(['npx', 'pnpm', 'npm', 'yarn', 'uv', 'uvx', 'bun', 'bunx'])
 
-/** Split a command line into words, dropping quoting noise. */
-function words(command: string): string[] {
-  return command.trim().split(/\s+/).filter((word) => word !== '')
+/** Wrapper subcommands that run another program. */
+const RUN_SUBCOMMANDS = new Set(['run', 'exec', 'dlx'])
+
+/** Package-manager subcommands that are not a program to learn about. */
+const PACKAGE_SCRIPTS = new Set(['install', 'ci', 'add', 'remove', 'update', 'build', 'dev', 'start', 'lint'])
+
+/** Interpreters whose first argument is the thing being run. */
+const INTERPRETERS = new Set(['python', 'python3', 'py', 'node'])
+
+/** Options that consume the next token, used to find the real executable. */
+const VALUE_FLAGS = new Set([
+  '--with',
+  '--package',
+  '-p',
+  '--prefix',
+  '--filter',
+  '--workspace',
+  '-w',
+  '--dir',
+  '-C',
+  '--cwd',
+  '--shell',
+])
+
+/** Longest token a fact may quote; a generated name is not a lesson. */
+const MAX_TOKEN_CHARS = 80
+
+/** Keep a quoted token short and free of markup characters. */
+function clip(token: string): string {
+  const clean = token.replace(/[`\u0000-\u001f]/g, '')
+  return clean.length <= MAX_TOKEN_CHARS ? clean : `${clean.slice(0, MAX_TOKEN_CHARS - 1)}…`
 }
 
-/** Strip leading environment assignments and `cd … &&` prefixes. */
-function stripPrefixes(wordList: string[]): string[] {
+/** Split a command line into words, keeping quoted spans together. */
+function tokenize(command: string): string[] {
+  const out: string[] = []
+  let current = ''
+  let quote: string | undefined
+  for (const char of command) {
+    if (quote !== undefined) {
+      if (char === quote) quote = undefined
+      else current += char
+      continue
+    }
+    if (char === '"' || char === "'") {
+      quote = char
+      continue
+    }
+    if (/\s/.test(char)) {
+      if (current !== '') out.push(current)
+      current = ''
+      continue
+    }
+    current += char
+  }
+  if (current !== '') out.push(current)
+  return out
+}
+
+/** Strip leading environment assignments, `env …` wrappers and `cd … &&` prefixes. */
+function stripPrefixes(wordList: readonly string[]): string[] {
   let rest = [...wordList]
   for (;;) {
     const head = rest[0]
-    if (head !== undefined && ENV_ASSIGNMENT.test(head)) {
+    if (head === undefined) return rest
+    if (ENV_ASSIGNMENT.test(head)) {
       rest = rest.slice(1)
+      continue
+    }
+    if (head === 'env') {
+      rest = rest.slice(1)
+      while (rest[0] !== undefined && (rest[0].startsWith('-') || ENV_ASSIGNMENT.test(rest[0]))) {
+        rest = rest.slice(1)
+      }
       continue
     }
     if (head === 'cd' || head === 'pushd') {
@@ -72,44 +141,97 @@ function stripPrefixes(wordList: string[]): string[] {
   }
 }
 
+/** Index of the first non-option word at or after `from`. */
+function firstOperand(wordList: readonly string[], from: number): number {
+  let index = from
+  for (;;) {
+    const word = wordList[index]
+    if (word === undefined) return index
+    if (!word.startsWith('-')) return index
+    index += VALUE_FLAGS.has(word) ? 2 : 1
+  }
+}
+
+/** A command reduced to the form that failed and the intent it served. */
+interface Parsed {
+  readonly form: string
+  readonly intent: string
+}
+
+/**
+ * Parse cache. Settle parses the same commands once per fact, so without this a
+ * repository with many facts re-parses its whole transcript per settle.
+ */
+const PARSED = new Map<string, Parsed | undefined>()
+
+/** Parse with a bounded memo, so a long session cannot grow the cache forever. */
+function parseCached(command: string): Parsed | undefined {
+  if (PARSED.has(command)) return PARSED.get(command)
+  const parsed = parse(command)
+  if (PARSED.size > 2_000) PARSED.clear()
+  PARSED.set(command, parsed)
+  return parsed
+}
+
+/**
+ * Reduce a command line to its invocation form and its intent.
+ * @param command - the raw command line.
+ * @returns undefined when the command runs no recognisable program.
+ */
+function parse(command: string): Parsed | undefined {
+  const rest = stripPrefixes(tokenize(command))
+  const head = rest[0]
+  if (head === undefined) return undefined
+  const base = head.includes('/') ? (head.split('/').pop() ?? head) : head
+  const next = rest[1]
+
+  if (INTERPRETERS.has(base)) {
+    if (next === '-m') {
+      const moduleName = rest[firstOperand(rest, 2)]
+      return moduleName === undefined ? undefined : { form: `${base} -m ${moduleName}`, intent: moduleName }
+    }
+    // `python build.py` and `python --version` are different claims, so the
+    // script is part of the form even though both serve the same interpreter.
+    if (next !== undefined && !next.startsWith('-')) return { form: `${base} ${next}`, intent: base }
+    return { form: base, intent: base }
+  }
+
+  if (WRAPPERS.has(base)) {
+    if (next !== undefined && RUN_SUBCOMMANDS.has(next)) {
+      if ((base === 'npm' || base === 'pnpm' || base === 'yarn') && next === 'run') {
+        const script = rest[firstOperand(rest, 2)]
+        return script === undefined ? undefined : { form: `${base} run ${script}`, intent: script }
+      }
+      const tool = rest[firstOperand(rest, 2)]
+      return tool === undefined ? undefined : { form: `${base} ${next} ${tool}`, intent: tool }
+    }
+    // `npm test` runs a script, it does not run a program called `test`.
+    if (next === 'test') return undefined
+    const tool = rest[firstOperand(rest, 1)]
+    if (tool === undefined) return undefined
+    if ((base === 'npm' || base === 'pnpm' || base === 'yarn') && PACKAGE_SCRIPTS.has(tool)) return undefined
+    return { form: `${base} ${tool}`, intent: tool }
+  }
+
+  return { form: base, intent: base }
+}
+
 /**
  * The intent a command serves, ignoring how it was invoked.
  * @param command - the raw command line.
  * @returns e.g. `pytest` for `python -m pytest`, bare `pytest`, or `npx pytest`.
  */
 export function intentOf(command: string): string | undefined {
-  const rest = stripPrefixes(words(command))
-  const head = rest[0]
-  if (head === undefined) return undefined
-  const base = head.includes('/') ? (head.split('/').pop() ?? head) : head
-  const next = rest[1]
-  if ((base === 'python' || base === 'python3' || base === 'py') && next === '-m') return rest[2]
-  if (base === 'uv' && next === 'run') return rest[2]
-  if (WRAPPERS.has(base)) {
-    if (next === 'dlx' || next === 'exec') return rest[2]
-    if (next === 'run' || next === 'test') return undefined
-    return next
-  }
-  return base
+  return parseCached(command)?.intent
 }
 
 /**
  * The form a command used: its distinctive invocation prefix.
  * @param command - the raw command line.
- * @returns e.g. `python -m pytest`, `pytest`, `npx jest`.
+ * @returns e.g. `python -m pytest`, `pytest`, `npx jest`, `python build.py`.
  */
 export function formOf(command: string): string | undefined {
-  const rest = stripPrefixes(words(command))
-  const head = rest[0]
-  if (head === undefined) return undefined
-  const base = head.includes('/') ? (head.split('/').pop() ?? head) : head
-  const next = rest[1]
-  if ((base === 'python' || base === 'python3' || base === 'py') && next === '-m') {
-    return rest[2] === undefined ? base : `${base} -m ${rest[2]}`
-  }
-  if (base === 'uv' && next === 'run') return rest[2] === undefined ? base : `uv run ${rest[2]}`
-  if (WRAPPERS.has(base) && next !== undefined) return `${base} ${next}`
-  return base
+  return parseCached(command)?.form
 }
 
 /**
@@ -119,12 +241,16 @@ export function formOf(command: string): string | undefined {
  * (an unnamed failure is not evidence for any claim).
  */
 export function errorClassOf(output: string): string | undefined {
-  if (/command not found|: not found\b/i.test(output)) return 'command-not-found'
   if (/ModuleNotFoundError|No module named/i.test(output)) return 'module-missing'
   if (/ImportError|cannot import name/i.test(output)) return 'import-error'
-  if (/No such file or directory/i.test(output)) return 'no-such-file'
-  if (/Permission denied/i.test(output)) return 'permission'
-  if (/is not set\b|environment variable .* (?:is )?(?:missing|not set)|KeyError/i.test(output)) return 'missing-env'
+  if (/\berror TS\d+/.test(output)) return 'type-error'
+  if (missingEnvOf(output) !== undefined) return 'missing-env'
+  // A bare `python build.py` traceback names the key without saying the
+  // environment is wrong; that is a code failure, not an env claim.
+  if (/KeyError/.test(output)) return 'key-error'
+  if (/\bcommand not found\b/.test(output)) return 'command-not-found'
+  if (/Permission denied|EACCES/.test(output)) return 'permission'
+  if (/No such file or directory|ENOENT/.test(output)) return 'no-such-file'
   return undefined
 }
 
@@ -146,6 +272,12 @@ function setsEnv(command: string, name: string): boolean {
   return new RegExp(`(?:^|\\s)${name}=`).test(command)
 }
 
+/** Split a fact key back into its family and two parts. */
+function keyParts(key: string): { family: string; first: string; second?: string } {
+  const [family = '', first = '', second] = key.split(':')
+  return { family, first, second }
+}
+
 /**
  * Propose facts from one session's shell calls.
  *
@@ -163,23 +295,27 @@ export function extractFacts(calls: readonly ShellCall[]): FactCandidate[] {
     if (failed === undefined || failed.ok) continue
     const errorClass = errorClassOf(failed.output)
     if (errorClass === undefined) continue
-    const intent = intentOf(failed.command)
-    const failedForm = formOf(failed.command)
-    if (intent === undefined || failedForm === undefined) continue
+    const failedParsed = parseCached(failed.command)
+    if (failedParsed === undefined) continue
+    const { form: failedForm, intent } = failedParsed
 
     const later = calls.slice(index + 1)
     const envName = missingEnvOf(failed.output)
 
     if (envName !== undefined) {
-      const working = later.find((call) => call.ok && setsEnv(call.command, envName))
+      // The repair must be the same intent that failed, with the variable set:
+      // an unrelated `API_KEY=x git push` demonstrates nothing about `python`.
+      const working = later.find(
+        (call) => call.ok && intentOf(call.command) === intent && setsEnv(call.command, envName),
+      )
       if (working !== undefined) {
-        const key = `env-value:${intent}:${envName}`
+        const key = `env-value:${clip(failedForm)}:${clip(envName)}`
         if (!found.has(key)) {
           found.set(key, {
             key,
             family: 'env-value',
             intent,
-            text: `\`${intent}\` needs \`${envName}\` set here; \`${envName}=…\` works.`,
+            text: `\`${clip(failedForm)}\` needs \`${clip(envName)}\` set here; \`${clip(envName)}=…\` works.`,
           })
         }
         continue
@@ -188,20 +324,19 @@ export function extractFacts(calls: readonly ShellCall[]): FactCandidate[] {
 
     const repaired = later.find((call) => {
       if (!call.ok) return false
-      if (intentOf(call.command) !== intent) return false
-      const form = formOf(call.command)
-      return form !== undefined && form !== failedForm && !setsEnv(call.command, envName ?? '\u0000')
+      const parsed = parseCached(call.command)
+      return parsed !== undefined && parsed.intent === intent && parsed.form !== failedForm
     })
     if (repaired === undefined) continue
     const workingForm = formOf(repaired.command)
     if (workingForm === undefined) continue
-    const key = `form-repair:${intent}:${failedForm}`
+    const key = `form-repair:${clip(intent)}:${clip(failedForm)}`
     if (found.has(key)) continue
     found.set(key, {
       key,
       family: 'form-repair',
       intent,
-      text: `\`${failedForm}\` fails here with ${ERROR_PHRASES[errorClass] ?? errorClass}; \`${workingForm}\` works.`,
+      text: `\`${clip(failedForm)}\` fails here with ${ERROR_PHRASES[errorClass] ?? errorClass}; \`${clip(workingForm)}\` works.`,
     })
   }
 
@@ -212,25 +347,50 @@ export function extractFacts(calls: readonly ShellCall[]): FactCandidate[] {
  * Whether this session shows the waste a fact claims to prevent.
  *
  * A form fact's waste is its exact failing form; an env fact's waste is the same
- * missing-variable failure. Used to decide whether injected facts are still
- * paying for themselves.
+ * form asking for the same variable. Used to decide whether injected facts are
+ * still paying for themselves.
  *
  * @param calls - the session's shell calls.
  * @param key - the fact's stable key.
  * @returns true when the failure the fact warns about happened anyway.
  */
 export function wasteRecurred(calls: readonly ShellCall[], key: string): boolean {
-  if (key.startsWith('form-repair:')) {
-    const [, intent, failingForm] = key.split(':')
+  const { family, first, second } = keyParts(key)
+  if (family === 'form-repair') {
+    const [, intent = '', failingForm = ''] = key.split(':')
     return calls.some(
       (call) => !call.ok && intentOf(call.command) === intent && formOf(call.command) === failingForm,
     )
   }
-  if (key.startsWith('env-value:')) {
-    const [, intent, name] = key.split(':')
-    if (name === undefined) return false
+  if (family === 'env-value' && second !== undefined) {
     return calls.some(
-      (call) => !call.ok && intentOf(call.command) === intent && missingEnvOf(call.output) === name,
+      (call) =>
+        !call.ok && formOf(call.command) === first && missingEnvOf(call.output) === second,
+    )
+  }
+  return false
+}
+
+/**
+ * Whether the situation a fact is about arose in this session at all.
+ *
+ * Independent of injection and of the outcome: this is the denominator of the
+ * firing rate, so an env fact counts only when the variable was asked for or
+ * supplied, not merely because the interpreter ran.
+ *
+ * @param calls - the session's shell calls.
+ * @param key - the fact's stable key.
+ * @returns true when the session touched the fact's situation.
+ */
+export function exercised(calls: readonly ShellCall[], key: string): boolean {
+  const { family, first, second } = keyParts(key)
+  if (family === 'form-repair') {
+    const [, intent = ''] = key.split(':')
+    return calls.some((call) => intentOf(call.command) === intent)
+  }
+  if (family === 'env-value' && second !== undefined) {
+    return calls.some(
+      (call) => missingEnvOf(call.output) === second || setsEnv(call.command, second) && formOf(call.command) === first,
     )
   }
   return false
@@ -240,8 +400,8 @@ export function wasteRecurred(calls: readonly ShellCall[], key: string): boolean
  * Whether a session contradicts a fact it was told.
  *
  * A form fact claims a form fails here: it is contradicted when that form
- * succeeds. An env fact claims a variable must be supplied: it is contradicted
- * when the same intent succeeds without it. Contradiction needs no model — the
+ * succeeds. An env fact claims a form needs a variable: it is contradicted when
+ * that same form succeeds without it. Contradiction needs no model — the
  * transcript either shows the claim holding or it does not.
  *
  * @param calls - the session's shell calls.
@@ -249,16 +409,15 @@ export function wasteRecurred(calls: readonly ShellCall[], key: string): boolean
  * @returns true when the session shows the claim is false in this repository.
  */
 export function contradicted(calls: readonly ShellCall[], key: string): boolean {
-  if (key.startsWith('form-repair:')) {
-    const [, , failingForm] = key.split(':')
-    if (failingForm === undefined) return false
+  const { family, first, second } = keyParts(key)
+  if (family === 'form-repair') {
+    const [, , failingForm = ''] = key.split(':')
+    if (failingForm === '') return false
     return calls.some((call) => call.ok && formOf(call.command) === failingForm)
   }
-  if (key.startsWith('env-value:')) {
-    const [, intent, name] = key.split(':')
-    if (name === undefined) return false
+  if (family === 'env-value' && second !== undefined) {
     return calls.some(
-      (call) => call.ok && intentOf(call.command) === intent && !setsEnv(call.command, name),
+      (call) => call.ok && formOf(call.command) === first && !setsEnv(call.command, second),
     )
   }
   return false

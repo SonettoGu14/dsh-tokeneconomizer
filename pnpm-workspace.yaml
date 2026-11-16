@@ -1,6 +1,9 @@
 packages:
   - 'packages/*'
 
-storeDir: /Users/gyk/Documents/deepseek-harness/default-workspace/.toolhome/pnpm-store
+# Keep the store inside the checkout so a machine-local cache never leaks into
+# the manifest. Override with `pnpm config set store-dir` if you prefer.
+# Keep the content-addressed store beside the workspace, not inside this repo.
+storeDir: ../.toolhome/pnpm-store
 verifyDepsBeforeRun: false
 confirmModulesPurge: false

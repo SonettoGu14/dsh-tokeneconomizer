@@ -22,12 +22,26 @@ export interface RepoIdentity {
   readonly source: RepoKeySource
 }
 
+/**
+ * Hosts whose repository paths are case-insensitive. Elsewhere the path keeps
+ * its case: on a self-hosted forge `Team/Api` and `team/api` may be two repos.
+ */
+const CASE_INSENSITIVE_HOSTS = new Set(['github.com', 'gitlab.com', 'bitbucket.org'])
+
 /** Reads `remote.origin.url` for a directory, or undefined when absent. */
 export type RemoteReader = (cwd: string) => string | undefined
 
+/** Reads the checkout root for a directory, or undefined when not a checkout. */
+export type TopLevelReader = (cwd: string) => string | undefined
+
 /**
- * Normalize a git remote URL to `host/path`, dropping credentials, ports,
- * a trailing `.git`, and trailing slashes so ssh and https agree.
+ * Normalize a git remote URL to `host/path`, dropping credentials, default
+ * ports, a trailing `.git` and trailing slashes so ssh and https agree.
+ *
+ * A non-default port is kept: `127.0.0.1:3000` and `127.0.0.1:3001` are
+ * different servers, and merging them would mix two repositories' facts. Paths
+ * keep their case except on hosts known to be case-insensitive (GitHub), where
+ * `Owner/Repo` and `owner/repo` are the same repository.
  * @param url - raw `remote.origin.url`.
  * @returns the normalized identity, or undefined when the URL is unusable.
  */
@@ -36,6 +50,7 @@ export function normalizeRemoteUrl(url: string): string | undefined {
   if (raw === '') return undefined
   let host: string
   let path: string
+  let port = ''
   const scp = /^(?:[^@/]+@)?([^:/]+):(.+)$/.exec(raw)
   if (scp !== null && !raw.includes('://')) {
     host = scp[1] ?? ''
@@ -49,17 +64,20 @@ export function normalizeRemoteUrl(url: string): string | undefined {
     }
     host = parsed.hostname
     path = parsed.pathname
+    port = parsed.port
   }
   if (host === '') return undefined
   const cleanHost = host.toLowerCase()
+  if (cleanHost === '' || cleanHost === '.') return undefined
   let cleanPath = path
     .replace(/^\/+/, '')
     .replace(/\/+$/, '')
-    .replace(/\.git$/, '')
+    .replace(/\.git$/i, '')
   if (cleanPath === '' || cleanPath.startsWith('..')) return undefined
-  // Local file remotes (`/path/to/repo`, `file:///path`) have no host identity.
-  if (cleanHost === 'localhost' || cleanHost === '.') return undefined
-  return `${cleanHost}/${cleanPath}`
+  if (CASE_INSENSITIVE_HOSTS.has(cleanHost)) cleanPath = cleanPath.toLowerCase()
+  // 22 and 443 are the default ssh/https ports, so they identify nothing extra.
+  const suffix = port === '' || port === '22' || port === '443' ? '' : `:${port}`
+  return `${cleanHost}${suffix}/${cleanPath}`
 }
 
 /**
@@ -79,12 +97,34 @@ export function gitOriginRemote(cwd: string): string | undefined {
 }
 
 /**
+ * Default reader: ask git for the root of the checkout containing `cwd`.
+ * @param cwd - directory to inspect.
+ * @returns the absolute checkout root, or undefined when this is not a checkout.
+ */
+export function gitTopLevel(cwd: string): string | undefined {
+  const result = spawnSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
+    encoding: 'utf8',
+    timeout: 1_000,
+    windowsHide: true,
+  })
+  if (result.status !== 0) return undefined
+  const out = (result.stdout ?? '').trim()
+  return out === '' ? undefined : out
+}
+
+/**
  * Resolve the identity of the repository a session ran in.
  * @param cwd - the session's absolute working directory.
  * @param readRemote - remote reader seam (tests inject a stub).
+ * @param readTopLevel - checkout-root seam, so subdirectories of one remote-less
+ * checkout share a bucket instead of each getting their own.
  * @returns the repository identity; never throws.
  */
-export function resolveRepoKey(cwd: string, readRemote: RemoteReader = gitOriginRemote): RepoIdentity {
+export function resolveRepoKey(
+  cwd: string,
+  readRemote: RemoteReader = gitOriginRemote,
+  readTopLevel: TopLevelReader = gitTopLevel,
+): RepoIdentity {
   try {
     const remote = readRemote(cwd)
     if (remote !== undefined) {
@@ -93,6 +133,12 @@ export function resolveRepoKey(cwd: string, readRemote: RemoteReader = gitOrigin
     }
   } catch {
     // A broken checkout must degrade to the path rule, never break a session.
+  }
+  try {
+    const root = readTopLevel(cwd)
+    if (root !== undefined && root !== '') return { key: `path:${root}`, source: 'path' }
+  } catch {
+    // Same rule: a broken checkout must never break a session.
   }
   return { key: `path:${cwd}`, source: 'path' }
 }

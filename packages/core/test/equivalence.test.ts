@@ -46,6 +46,13 @@ describe('equivalentTokens', () => {
     )
   })
 
+  it('charges a cache write at the write price, not at the fresh price', () => {
+    // 100 cache-write tokens: flash writes at 1x, the default row at 1.25x.
+    const buckets = sampleBuckets({ inputTokens: 0, outputTokens: 0, cacheWriteTokens: 100 })
+    expect(equivalentTokens(buckets, DEEPSEEK_FLASH_WEIGHTS)).toBeCloseTo(100, 6)
+    expect(equivalentTokens(buckets, DEFAULT_WEIGHTS)).toBeCloseTo(125, 6)
+  })
+
   it('bills output far above cached input on the default row', () => {
     const out = sampleBuckets({ inputTokens: 0, outputTokens: 100 })
     const cached = sampleBuckets({ inputTokens: 0, cacheReadTokens: 100, outputTokens: 0 })

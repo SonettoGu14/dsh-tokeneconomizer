@@ -8,7 +8,8 @@
     "cordis.patch.yml"
   ],
   "engines": {
-    "node": ">=24.9.0"
+    "node": ">=24.9.0",
+    "dsh": ">=0.2.2-rc.3 <0.3.0"
   },
   "dependencies": {
     "@gyk/dsh-te-core": "workspace:*",

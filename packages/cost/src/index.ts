@@ -112,6 +112,13 @@ export class CostLedger extends Service {
   private readonly states = new WeakMap<Session, SessionCost>()
   private readonly repoKeys = new Map<string, RepoIdentity>()
   private readonly repoCache = new Map<string, RepoCostRecord>()
+
+  /** Settles in flight, awaited by the `session/flush` durability checkpoint. */
+  private readonly pending = new Map<string, Promise<void>>()
+
+  /** One write at a time per repository, so concurrent settles cannot drop totals. */
+  private readonly settling = new Map<string, Promise<void>>()
+
   private readonly config: Config
 
   constructor(ctx: Context, config: Config) {
@@ -125,14 +132,33 @@ export class CostLedger extends Service {
       this.observe(session, event)
     })
     ctx.on('session/disposed', (session: Session) => {
-      void this.settle(session)
+      // Sessions are torn down without awaiting listeners, so the write is
+      // handed to the awaited `session/flush` durability checkpoint instead of
+      // racing the process exit here.
+      this.pending.set(
+        session.id,
+        this.settle(session)
+          .catch((error: unknown) => {
+            this.ctx.logger('dsh-te-cost').warn('session totals not persisted: %s', String(error))
+          })
+          .finally(() => this.pending.delete(session.id)),
+      )
+    })
+    ctx.on('session/flush', async () => {
+      await Promise.all([...this.pending.values()])
     })
     ctx.effect(() =>
       ctx.commands.register({
         name: 'te-cost',
         description: 'Show cache-weighted equivalent-token spend for this session and repo',
         input: { hint: 'session | repo' },
-        handler: (invocation) => ({ kind: 'success', text: this.report(invocation.agent.session, invocation.rawInput) }),
+        handler: async (invocation) => {
+          const session = invocation.agent.session
+          // A resumed session has an empty in-memory cache; load the record so
+          // `/te-cost repo` answers from disk instead of claiming there is none.
+          await this.repoSnapshot(session)
+          return { kind: 'success', text: this.report(session, invocation.rawInput) }
+        },
       }),
     )
   }
@@ -299,6 +325,21 @@ export class CostLedger extends Service {
     const repo = this.repoOf(session)
     if (repo === undefined) return
     if (state.acc.equivalent === 0 && overheadTotal(state.overhead) === 0) return
+    // Two sessions can end at once (two tabs, desktop plus CLI). Serialize per
+    // repository so one read-modify-write cannot drop the other's totals.
+    const previous = this.settling.get(repo.key) ?? Promise.resolve()
+    const run = previous.then(() => this.persist(session, state, repo))
+    this.settling.set(
+      repo.key,
+      run.catch(() => {
+        // Kept so the next writer still waits for this one to settle.
+      }),
+    )
+    return run
+  }
+
+  /** One read-modify-write of a repository's cost record. */
+  private async persist(session: Session, state: SessionCost, repo: RepoIdentity): Promise<void> {
     try {
       const previous = await this.repoSnapshot(session)
       const next: RepoCostRecord = {
@@ -313,7 +354,7 @@ export class CostLedger extends Service {
       await writeJsonAtomic(this.recordPath(repo.key), next)
       this.repoCache.set(repo.key, next)
     } catch (error) {
-      this.ctx.logger('dsh-te-cost').debug('repo totals not persisted: %s', String(error))
+      this.ctx.logger('dsh-te-cost').warn('repo totals not persisted: %s', String(error))
     }
   }
 }

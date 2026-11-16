@@ -37,6 +37,11 @@ export interface Config {
 
 export const name = 'dsh-te-prune'
 
+/** Whether this session is a delegation of another one. */
+function isSubagent(session: Session): boolean {
+  return session.header?.origin === 'subagent'
+}
+
 /** Tools whose meaning is the session itself: hiding them breaks the harness. */
 const ALWAYS_PROTECTED: readonly string[] = [
   'bash',
@@ -58,6 +63,13 @@ const ALWAYS_PROTECTED: readonly string[] = [
   'send_message',
   'wait_agent',
   'present',
+  // Hiding these is self-defeating: they are how a long session stays cheap and
+  // how an agent reaches the facts/skills it was told about.
+  'compress',
+  'decompress',
+  'search_context',
+  'skill',
+  'read_image',
 ]
 
 export const Config: z<Config> = z.object({
@@ -117,6 +129,9 @@ export class Prune extends Service {
 
   private readonly watching = new Map<string, SessionWatch>()
 
+  /** Settles in flight, awaited by the `session/flush` durability checkpoint. */
+  private readonly pending = new Map<string, Promise<void>>()
+
   private readonly repos = new Map<string, RepoPrune>()
 
   constructor(ctx: Context, private readonly config: Config) {
@@ -127,16 +142,28 @@ export class Prune extends Service {
     this.ctx.on('tools/result', (exec, result) => {
       this.observe(exec, result)
     })
-    this.ctx.on('agent/pre-step', async (payload, next) => {
-      const decision = await next()
-      if (decision.kind !== 'enter') return decision
-      await this.maybeRestrict(payload.agent, payload.turn, payload.step)
-      return decision
+    // `agent/created` is after `agentCtx` exists and before the first prompt is
+    // assembled. Doing this any later would send the first request with the full
+    // tool block and then change it, which re-reads the whole prompt uncached.
+    this.ctx.on('agent/created', async ({ agent }) => {
+      if (isSubagent(agent.session)) return
+      await this.maybeRestrict(agent)
     })
     this.ctx.on('session/disposed', (session) => {
-      this.settle(session).catch(() => {
-        // Losing a pruning pass is harmless; never fail the session over it.
-      })
+      // Teardown does not await listeners; the write is drained by the awaited
+      // `session/flush` checkpoint rather than racing the process exit.
+      this.pending.set(
+        session.id,
+        this.settle(session)
+          .catch((error: unknown) => {
+            // Losing a pruning pass is harmless; never fail the session over it.
+            this.ctx.logger('dsh-te-prune').warn('prune state not settled: %s', String(error))
+          })
+          .finally(() => this.pending.delete(session.id)),
+      )
+    })
+    this.ctx.on('session/flush', async () => {
+      await Promise.all([...this.pending.values()])
     })
     this.ctx.effect(() =>
       this.ctx.commands.register({
@@ -144,11 +171,15 @@ export class Prune extends Service {
         description: 'Show or restore tools hidden by dsh-te-prune',
         input: { hint: 'restore' },
         handler: async (invocation) => {
+          const session = invocation.agent.session
+          // A resumed session may have no in-memory state yet; load it so the
+          // command answers from disk instead of claiming nothing was measured.
+          await this.repoOf(session)
           const raw = invocation.rawInput.trim().toLowerCase()
           if (raw === 'restore') {
-            return { kind: 'success', text: await this.restore(invocation.agent.session) }
+            return { kind: 'success', text: await this.restore(session) }
           }
-          return { kind: 'success', text: this.report(invocation.agent.session) }
+          return { kind: 'success', text: this.report(session) }
         },
       }),
     )
@@ -210,20 +241,30 @@ export class Prune extends Service {
   }
 
   /** Hide this session's candidates, once, before the tools are assembled. */
-  private async maybeRestrict(agent: Agent, turn: number, step: number): Promise<void> {
-    if (turn !== 1 || step !== 1) return
+  private async maybeRestrict(agent: Agent): Promise<void> {
     const session = agent.session
     const watch = this.watchOf(session)
     if (watch.decided) return
     watch.decided = true
     const repo = await this.repoOf(session)
-    const available = visibleTools(this.ctx)
+    // The restriction must be installed on the agent's own scope: a
+    // context-global one would mask the tool for every agent in the process,
+    // and the registry rejects it outright.
+    const tools = agent.ctx.get('tools') as ToolsService | undefined
+    if (tools === undefined) return
+    const available = tools.schemas().map((schema) => schema.name)
     const deny = this.candidates(repo, available)
     if (deny.length === 0) return
-    const tools = this.ctx.get('tools') as ToolsService | undefined
-    if (tools === undefined) return
-    watch.hidden = deny
-    watch.dispose = tools.restrict({ deny })
+    try {
+      watch.hidden = deny
+      watch.dispose = tools.restrict({ deny })
+    } catch (error) {
+      // A name registered only for this agent, or one that disappeared between
+      // listing and restricting, makes the whole filter invalid. Hiding tools is
+      // an optimization: leave the set untouched rather than fail the session.
+      watch.hidden = []
+      this.ctx.logger('dsh-te-prune').warn('could not hide idle tools: %s', String(error))
+    }
   }
 
   /**
@@ -231,9 +272,16 @@ export class Prune extends Service {
    * @param session - the session that just ended.
    */
   async settle(session: Session): Promise<void> {
+    // A subagent child is a delegation of the session that already counts: it
+    // would otherwise age every tool it never had reason to call.
+    if (isSubagent(session)) return
     const watch = this.watching.get(session.id)
     this.watching.delete(session.id)
-    watch?.dispose?.()
+    try {
+      watch?.dispose?.()
+    } catch {
+      // The agent scope may already be torn down; the restriction died with it.
+    }
     const repo = await this.repoOf(session)
     const ordinal = repo.sessions + 1
     const available = visibleTools(this.ctx)
@@ -257,8 +305,19 @@ export class Prune extends Service {
   /** Give every hidden tool back, permanently. */
   async restore(session: Session): Promise<string> {
     const key = resolveRepoKey(session.header?.cwd ?? process.cwd()).key
-    const repo = this.repos.get(key)
-    if (repo === undefined) return `Nothing pruned in ${key}.`
+    const repo = await this.repoOf(session)
+    // The live mask must go too, or the tool stays hidden until this session ends
+    // even though the command promises it back.
+    const watch = this.watching.get(session.id)
+    try {
+      watch?.dispose?.()
+    } catch {
+      // The agent scope may already be gone; nothing left to release.
+    }
+    if (watch !== undefined) {
+      watch.dispose = undefined
+      watch.hidden = []
+    }
     const hidden = Object.entries(repo.tools)
       .filter(([tool, record]) => !this.protectedNames().has(tool) && record.idle >= this.config.idleSessions)
       .map(([tool]) => tool)

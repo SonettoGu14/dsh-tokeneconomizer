@@ -121,14 +121,19 @@ describe('learning', () => {
     expect(state.facts[0]?.confirms).toEqual([1, 2, 3])
   })
 
-  it('contradicts a stored fact when its failing form succeeds', async () => {
+  it('contradicts a stored fact after its failing form succeeds twice', async () => {
     const ctx = await mount()
     for (const id of ['s1', 's2', 's3']) await learnSession(ctx, id)
-    const session = sessionOf('s4')
-    shell(ctx, session, REPAIR_COMMAND[0], true)
-    await ctx.teFacts.settle(session)
-    const fact = (await storedFacts()).facts[0]
-    expect(fact?.state).toBe('retired')
+    // One clean success is a noisy task, not a reversal: the fact survives it.
+    const noisy = sessionOf('s4')
+    shell(ctx, noisy, REPAIR_COMMAND[0], true)
+    await ctx.teFacts.settle(noisy)
+    expect((await storedFacts()).facts[0]?.state).toBe('active')
+
+    const second = sessionOf('s5')
+    shell(ctx, second, REPAIR_COMMAND[0], true)
+    await ctx.teFacts.settle(second)
+    expect((await storedFacts()).facts[0]?.state).toBe('retired')
   })
 
   it('survives a session that touched nothing', async () => {
@@ -168,11 +173,21 @@ describe('injection', () => {
   })
 
   it('keeps the injected block inside the character budget', async () => {
-    const ctx = await mount({ maxChars: 120 })
+    const ctx = await mount({ maxChars: 220 })
     for (const id of ['s1', 's2', 's3', 's4']) await learnSession(ctx, id)
     const decision = await preStep(ctx, sessionOf('s5'), 1, 1)
+    expect(decision.messages).toHaveLength(1)
     const text = decision.messages[0]?.content[0]?.text ?? ''
-    expect(text.length).toBeLessThanOrEqual(120)
+    expect(text.length).toBeGreaterThan(0)
+    expect(text.length).toBeLessThanOrEqual(220)
+    expect(text).toContain('`pytest` fails here')
+  })
+
+  it('injects nothing at all when not even the header fits', async () => {
+    const ctx = await mount({ maxChars: 60 })
+    for (const id of ['s1', 's2', 's3', 's4']) await learnSession(ctx, id)
+    const decision = await preStep(ctx, sessionOf('s5'), 1, 1)
+    expect(decision.messages).toEqual([])
   })
 
   it('does not repeat the block within one session', async () => {
@@ -181,6 +196,67 @@ describe('injection', () => {
     const session = sessionOf('s5')
     expect((await preStep(ctx, session, 1, 1)).messages).toHaveLength(1)
     expect((await preStep(ctx, session, 2, 1)).messages).toEqual([])
+  })
+})
+
+describe('session lifecycle', () => {
+  it('learns from the disposed event, not only from a direct settle call', async () => {
+    const ctx = await mount()
+    const session = sessionOf('s1')
+    shell(ctx, session, REPAIR_COMMAND[0], false, REPAIR_FAILED)
+    shell(ctx, session, REPAIR_COMMAND[1], true)
+    ctx.emit('session/disposed', session)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    const state = await storedFacts()
+    expect(state.tasks).toBe(1)
+    expect(state.facts).toHaveLength(1)
+  })
+})
+
+describe('session shape', () => {
+  it('does not count a subagent session as a repository task', async () => {
+    const ctx = await mount()
+    await learnSession(ctx, 's1')
+    await learnSession(ctx, 's2')
+    const child = { id: 'child-1', header: { cwd: repo, origin: 'subagent' } } as unknown as Session
+    shell(ctx, child, REPAIR_COMMAND[0], false, REPAIR_FAILED)
+    shell(ctx, child, REPAIR_COMMAND[1], true)
+    await ctx.teFacts.settle(child)
+    const state = await storedFacts()
+    expect(state.tasks).toBe(2)
+    expect(state.facts[0]?.confirms).toEqual([1, 2])
+  })
+
+  it('does not inject into a subagent session', async () => {
+    const ctx = await mount()
+    for (const id of ['s1', 's2', 's3', 's4']) await learnSession(ctx, id)
+    const child = { id: 'child-2', header: { cwd: repo, origin: 'subagent' } } as unknown as Session
+    expect((await preStep(ctx, child, 1, 1)).messages).toEqual([])
+    expect((await preStep(ctx, sessionOf('s5'), 1, 1)).messages).toHaveLength(1)
+  })
+})
+
+describe('retirement is not permanent', () => {
+  it('lets a retired fact be learned again from fresh evidence', async () => {
+    const ctx = await mount()
+    for (const id of ['s1', 's2', 's3']) await learnSession(ctx, id)
+    // The same form now succeeds twice: the repository disproved the claim.
+    for (const id of ['s4', 's5']) {
+      const disprover = sessionOf(id)
+      shell(ctx, disprover, REPAIR_COMMAND[0], true)
+      await ctx.teFacts.settle(disprover)
+    }
+    expect((await storedFacts()).facts[0]?.state).toBe('retired')
+
+    // The repository changed back: a later session repeats the repair.
+    const relearn = sessionOf('s6')
+    shell(ctx, relearn, REPAIR_COMMAND[0], false, REPAIR_FAILED)
+    shell(ctx, relearn, REPAIR_COMMAND[1], true)
+    await ctx.teFacts.settle(relearn)
+    const state = await storedFacts()
+    expect(state.facts).toHaveLength(1)
+    expect(state.facts[0]?.state).toBe('candidate')
+    expect(state.facts[0]?.confirms).toEqual([6])
   })
 })
 
