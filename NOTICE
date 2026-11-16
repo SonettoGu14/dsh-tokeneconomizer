@@ -1,0 +1,23 @@
+dsh-tokeneconomizer
+===================
+
+This project is an independent TypeScript implementation of three mechanisms
+from TokenEconomizer:
+
+    https://github.com/microsoft/TokenEconomizer
+    arXiv:2610.22732
+    Copyright (c) Microsoft Corporation and contributors
+    Licensed under the Apache License, Version 2.0
+
+The mechanism designs, the lifecycle and firing-gate constants (K_PROMOTE,
+GAMMA, LAMBDA, FIRE_GATE, FIRE_MIN_N), the price-ratio model of the cost
+accounting, and the envfact extraction families are derived from that project.
+The implementation here is new: it targets the DeepSeek Harness plugin API
+(Cordis) rather than the out-of-process hooks TokenEconomizer uses for Claude
+Code, Codex and Copilot CLI.
+
+Files derived in substance from TokenEconomizer are marked in their module
+docstrings. No source file was copied verbatim.
+
+TokenEconomizer is licensed under the Apache License, Version 2.0; a copy of
+that license applies to the derived portions of this project.

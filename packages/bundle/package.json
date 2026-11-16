@@ -20,10 +20,6 @@
     "@deepseek-ai/dsh": ">=0.2.2-rc.3"
   },
   "exports": {
-    ".": {
-      "types": "./lib/index.d.ts",
-      "import": "./lib/index.js"
-    },
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
