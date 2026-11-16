@@ -1,0 +1,35 @@
+{
+  "name": "@gyk/dsh-te",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Install-all bundle for the DSH TokenEconomizer components (cost, facts, prune).",
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "engines": {
+    "node": ">=24.9.0"
+  },
+  "dependencies": {
+    "@gyk/dsh-te-core": "workspace:*",
+    "@gyk/dsh-te-cost": "workspace:*",
+    "@gyk/dsh-te-facts": "workspace:*",
+    "@gyk/dsh-te-prune": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.2.2-rc.3"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+# @gyk/dsh-te: the install-all bundle. Installing this package pulls the three
+# components and inserts their rows; set `enabled: false` on a row's config to
+# keep the component dormant without uninstalling it.
+# Install: dsh plugin --profile <name> add link:<repo>/packages/bundle
+- insert:
+    - id: te-cost
+      name: '@gyk/dsh-te-cost'
+    - id: te-facts
+      name: '@gyk/dsh-te-facts'
+      config:
+        enabled: true
+    - id: te-prune
+      name: '@gyk/dsh-te-prune'

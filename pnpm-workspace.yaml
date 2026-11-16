@@ -1,0 +1,6 @@
+packages:
+  - 'packages/*'
+
+storeDir: /Users/gyk/Documents/deepseek-harness/default-workspace/.toolhome/pnpm-store
+verifyDepsBeforeRun: false
+confirmModulesPurge: false

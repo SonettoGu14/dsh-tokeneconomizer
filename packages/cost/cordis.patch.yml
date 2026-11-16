@@ -1,0 +1,5 @@
+# te-cost: inserts this component into a DSH profile roster.
+# Install: dsh plugin --profile <name> add link:<repo>/packages/cost
+- insert:
+    - id: te-cost
+      name: '@gyk/dsh-te-cost'

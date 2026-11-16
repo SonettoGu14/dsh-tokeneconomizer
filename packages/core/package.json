@@ -1,0 +1,11 @@
+{
+  "name": "@gyk/dsh-te-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": { ".": { "types": "./lib/index.d.ts", "import": "./lib/index.js" } },
+  "files": ["lib", "src"],
+  "engines": { "node": ">=24.9.0" }
+}
