@@ -38,3 +38,24 @@ export type { RepoIdentity, RepoKeySource } from './repo-key.ts'
 export { formatTokens } from './format.ts'
 
 export { STATE_DIR_NAME, expandHome, readJson, resolveDshHome, stateRoot, writeJsonAtomic } from './storage.ts'
+
+export {
+  FIRE_GATE,
+  FIRE_MIN_N,
+  GAMMA,
+  HARD_KILL,
+  K_PROMOTE,
+  LAMBDA,
+  NEW_LIFECYCLE,
+  SCORE_FLOOR,
+  confirm,
+  contradict,
+  firingRate,
+  injectable,
+  recordExercise,
+  score,
+} from './facts.ts'
+export type { FactLifecycle, FactState } from './facts.ts'
+
+export { contradicted, errorClassOf, extractFacts, formOf, intentOf, missingEnvOf, wasteRecurred } from './shell.ts'
+export type { FactCandidate, ShellCall } from './shell.ts'
