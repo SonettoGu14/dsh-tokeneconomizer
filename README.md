@@ -136,9 +136,34 @@ pnpm test        # vitest: 87 tests
 The tests are not decoration: the cost component is mounted in a real Cordis
 `Context` with a stubbed command service and fed synthetic session events; facts
 and prune go through four/five simulated sessions to prove promotion, the firing
-gate, contradiction, idle counting, and that restrictions are lifted again. The
-one thing no unit test can prove is the harness-level effect on token spend; that
-needs real sessions.
+gate, contradiction, idle counting, and that restrictions are lifted again.
+
+They also are not the whole story, so the plugins were booted in the real
+harness. A throwaway profile built from the shipped `headless` template with the
+bundle installed answered a one-word task and exited cleanly:
+
+```
+$ dsh --profile te-headless "Reply with exactly: ok"
+ok
+```
+
+That run produced `$DSH_HOME/dsh-tokeneconomizer/repos/<key>/cost.json` with
+`equivalent: 9189` for a three-token reply — the fixed prompt and tool
+definitions, not the answer, are what a session costs. The same repo after a
+second session read:
+
+```json
+{"equivalent": 9471.76, "buckets": {"uncachedInput": 9266, "cacheRead": 9088,
+ "cacheWrite": 0, "output": 6}, "sessions": 2}
+```
+
+18,360 raw tokens against 9,472 equivalent ones: that gap is the whole reason the
+ledger folds buckets instead of summing `totalTokens`. A profile with **only**
+`@gyk/dsh-te-cost` installed boots the same way, so the components really are
+independent.
+
+What no test can prove is the harness-level effect on token spend over many
+sessions; that needs the plugins left on in real work.
 
 ## What was deliberately not ported
 
