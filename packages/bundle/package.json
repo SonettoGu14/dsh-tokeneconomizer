@@ -1,15 +1,35 @@
 {
   "name": "@sonettogu14/dsh-te",
   "version": "0.1.0",
-  "private": true,
-  "type": "module",
   "description": "Install-all bundle for the DSH TokenEconomizer components (cost, facts, prune).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
   "files": [
     "cordis.patch.yml"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SonettoGu14/dsh-tokeneconomizer.git",
+    "directory": "packages/bundle"
+  },
   "engines": {
     "node": ">=24.9.0",
     "dsh": ">=0.2.2-rc.3 <0.3.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "prepublishOnly": "pnpm -w run build"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@sonettogu14/dsh-te-core": "workspace:*",
@@ -19,14 +39,5 @@
   },
   "peerDependencies": {
     "@deepseek-ai/dsh": ">=0.2.2-rc.3"
-  },
-  "exports": {
-    "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
-  },
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    }
   }
 }

@@ -1,9 +1,9 @@
 {
   "name": "@sonettogu14/dsh-te-cost",
   "version": "0.1.0",
-  "private": true,
-  "type": "module",
   "description": "Cache-weighted equivalent-token accounting for DSH sessions.",
+  "license": "Apache-2.0",
+  "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "exports": {
@@ -19,6 +19,11 @@
     "src",
     "cordis.patch.yml"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SonettoGu14/dsh-tokeneconomizer.git",
+    "directory": "packages/cost"
+  },
   "engines": {
     "node": ">=24.9.0",
     "dsh": ">=0.2.2-rc.3 <0.3.0"
@@ -27,6 +32,12 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
+  },
+  "scripts": {
+    "prepublishOnly": "pnpm -w run build"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@sonettogu14/dsh-te-core": "workspace:*",

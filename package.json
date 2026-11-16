@@ -11,7 +11,9 @@
     "build": "tsc -b",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.test.json --pretty false",
-    "prepare": "tsc -b"
+    "prepare": "tsc -b",
+    "release": "pnpm build && pnpm -r publish --access public --no-git-checks",
+    "release:dry": "pnpm build && pnpm -r publish --dry-run --access public --no-git-checks"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.1.0",

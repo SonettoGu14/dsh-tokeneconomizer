@@ -1,11 +1,32 @@
 {
   "name": "@sonettogu14/dsh-te-core",
   "version": "0.1.0",
-  "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
-  "exports": { ".": { "types": "./lib/index.d.ts", "import": "./lib/index.js" } },
-  "files": ["lib", "src"],
-  "engines": { "node": ">=24.9.0" }
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    }
+  },
+  "files": [
+    "lib",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SonettoGu14/dsh-tokeneconomizer.git",
+    "directory": "packages/core"
+  },
+  "engines": {
+    "node": ">=24.9.0"
+  },
+  "scripts": {
+    "prepublishOnly": "pnpm -w run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

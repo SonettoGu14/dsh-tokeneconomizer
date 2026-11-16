@@ -14,6 +14,13 @@ three of its mechanisms against a plugin API TokenEconomizer did not have.
 
 ## Install
 
+From the npm registry (0.1.0 and later):
+
+```sh
+dsh plugin --profile <profile> add @sonettogu14/dsh-te          # all three
+dsh plugin --profile <profile> add @sonettogu14/dsh-te-cost     # or one at a time
+```
+
 From a checkout, build once first: a `link:` install links sources and keeps
 their `node_modules`, but it does not run the build for you, and the packages
 resolve their entry points from `lib/`.
@@ -44,7 +51,17 @@ dsh --profile <profile> --dump-config | grep -A2 "== @sonettogu14"
 ```
 
 Set `enabled: false` in the row's `config` to keep a component installed but
-dormant. The components have no dependency on each other: `cost`, `facts` and
+dormant.
+
+Maintainer release, once the version is bumped in `packages/*/package.json`:
+
+```sh
+pnpm release:dry    # build + `pnpm -r publish --dry-run`, packs all five
+pnpm release        # build + `pnpm -r publish --access public --no-git-checks`
+```
+
+`prepublishOnly` builds each package, `files` ships `lib/`, and pnpm rewrites
+the intra-workspace `workspace:*` dependencies to the published versions. The components have no dependency on each other: `cost`, `facts` and
 `prune` depend only on `@sonettogu14/dsh-te-core`, and the one cross-component
 interaction (`facts` reporting its own injected tokens to `cost`) is a soft,
 optional lookup — lose the ledger and facts still work.
