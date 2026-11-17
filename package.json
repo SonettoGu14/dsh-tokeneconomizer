@@ -13,15 +13,21 @@
     "typecheck": "tsc -p tsconfig.test.json --pretty false",
     "prepare": "tsc -b",
     "release": "pnpm build && pnpm -r publish --access public --no-git-checks",
-    "release:dry": "pnpm build && pnpm -r publish --dry-run --access public --no-git-checks"
+    "release:dry": "pnpm build && pnpm -r publish --dry-run --access public --no-git-checks",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "verify": "pnpm build && pnpm typecheck && pnpm test && pnpm test:integration"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.1.0",
     "@deepseek-ai/dsh": "0.2.2-rc.3",
     "@deepseek-ai/dsh-agent": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-agent-loop": "0.2.2-rc.3",
     "@deepseek-ai/dsh-commands": "0.2.2-rc.3",
     "@deepseek-ai/dsh-llm": "0.2.2-rc.3",
     "@deepseek-ai/dsh-session": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-session-projection": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-tool-executor-native": "0.2.2-rc.3",
     "@deepseek-ai/dsh-tools": "0.2.2-rc.3",
     "@types/node": "^22.20.0",
     "typescript": "^6.0.3",

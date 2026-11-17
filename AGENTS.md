@@ -28,13 +28,16 @@ checkout is usually a sibling directory (`../TokenEconomizer`).
 pnpm install        # node >= 24.9, pnpm 11.28.5 via packageManager
 pnpm build          # tsc -b (project references; lib/ is gitignored)
 pnpm typecheck      # tsc -p tsconfig.test.json  (run after build)
-pnpm test           # vitest, packages/*/test
+pnpm test           # vitest, packages/*/test (113 unit tests)
+pnpm test:integration  # vitest, test/integration (8 tests, real DSH packages)
+pnpm verify         # build + typecheck + test + test:integration
 pnpm release:dry    # build + pnpm -r publish --dry-run
 pnpm release        # build + pnpm -r publish --access public
 ```
 
-Always run `pnpm build && pnpm typecheck && pnpm test` before committing.
-`typecheck` depends on `build`: the test project consumes the emitted `lib/*.d.ts`.
+Always run `pnpm verify` (or `pnpm build && pnpm typecheck && pnpm test &&
+pnpm test:integration`) before committing. `typecheck` depends on `build`: the
+test project consumes the emitted `lib/*.d.ts`.
 
 To try a change in a real session:
 
@@ -113,6 +116,15 @@ both `peerDependencies` and `devDependencies` (shared instances require both).
   plugin consumes, and emit the real events rather than calling internals.
 - Assert observable behaviour (state file, service method, injected message),
   not private fields.
+- Anything that touches injection, the tool surface, or persistence also needs a
+  case in `test/integration/`. Those run a real agent turn against the real dsh
+  packages with a scripted `LlmAdapter` (no network, no credentials): assert on
+  what the *model request* contains, not on what a unit test thinks was called.
+- The integration harness in `test/integration/harness.ts` mounts a fixed
+  composition; at minimum `dsh-tool-executor-native` must be there or DSH 0.2.2
+  ends the turn with "The selected tool executor is unavailable". Each test gets
+  a temp `$DSH_HOME` and a temp git project with a fake `origin` remote, which is
+  what fixes the repository key.
 - If a change alters on-disk shape, bump the record's `version` and keep the
   reader tolerant of older or malformed records.
 

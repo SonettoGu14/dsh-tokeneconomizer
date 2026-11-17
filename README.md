@@ -157,19 +157,43 @@ by repository key. Writes are atomic (`tmp` + `rename`), reads never throw.
 ## Verification
 
 ```sh
-pnpm build       # tsc -b over the four source packages
-pnpm typecheck   # tsc -p tsconfig.test.json, includes tests
-pnpm test        # vitest: 87 tests
+pnpm build             # tsc -b over the four source packages
+pnpm typecheck         # tsc -p tsconfig.test.json, includes all tests
+pnpm test              # vitest: 113 unit tests
+pnpm test:integration  # vitest: 8 integration tests against real DSH packages
+pnpm verify            # all four, in that order
 ```
 
-The tests are not decoration: the cost component is mounted in a real Cordis
-`Context` with a stubbed command service and fed synthetic session events; facts
-and prune go through four/five simulated sessions to prove promotion, the firing
-gate, contradiction, idle counting, and that restrictions are lifted again.
+Three levels, from cheapest to most convincing:
 
-They also are not the whole story, so the plugins were booted in the real
-harness. A throwaway profile built from the shipped `headless` template with the
-bundle installed answered a one-word task and exited cleanly:
+**Unit tests** mount the components in a bare Cordis `Context` with stubbed
+services: cost is fed synthetic session events, facts and prune are driven
+through four to six simulated sessions to prove promotion, the firing gate,
+two-strike contradiction, idle counting, and that restrictions are lifted again.
+
+**Integration tests** (`test/integration/`) are the interesting ones: they load
+the real `@deepseek-ai/dsh-agent-loop`, `dsh-llm`, `dsh-tools`,
+`dsh-session` and `dsh-tool-executor-native` packages, register a scripted
+`LlmAdapter` in place of a provider, and run a genuine agent turn — no network,
+no credentials, no model. What they assert is exactly what the components claim:
+
+- **cost** — the four buckets the fake adapter reports (`100` uncached, `50`
+  cache-read, `5` cache-write, `20` output) land in `cost.json` unchanged and
+  fold to `equivalent: 211.25`; two sessions in one repository accumulate.
+- **facts** — a qualified fact is present as a `dsh-te-facts` message in the
+  *first model request* (not merely in state), and disappears when the fire gate
+  is not met; a real failing `python -m pytest` followed by a working `pytest`
+  in the same session teaches the fact end to end.
+- **prune** — an idle tool is absent from the request's `toolNames` while the
+  registry still knows it (hidden, not unregistered); a tool below the threshold
+  survives; `write` is never hidden.
+
+These tests caught a real composition requirement: DSH 0.2.2 refuses to run an
+agent unless a tool executor is mounted, which a bare event-level test never
+notices.
+
+**Manual, real model** — a throwaway profile built from the shipped `headless`
+template with the bundle installed answered a one-word task and exited cleanly:
 
 ```
 $ dsh --profile te-headless "Reply with exactly: ok"
