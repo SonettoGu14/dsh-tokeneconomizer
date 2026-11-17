@@ -69,5 +69,9 @@
     "@deepseek-ai/dsh-commands": {
       "optional": false
     }
+  },
+  "homepage": "https://github.com/SonettoGu14/dsh-tokeneconomizer/tree/master/packages/cost#readme",
+  "bugs": {
+    "url": "https://github.com/SonettoGu14/dsh-tokeneconomizer/issues"
   }
 }

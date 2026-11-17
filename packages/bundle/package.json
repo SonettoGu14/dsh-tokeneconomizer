@@ -39,5 +39,9 @@
   },
   "peerDependencies": {
     "@deepseek-ai/dsh": ">=0.2.2-rc.3"
+  },
+  "homepage": "https://github.com/SonettoGu14/dsh-tokeneconomizer/tree/master/packages/bundle#readme",
+  "bugs": {
+    "url": "https://github.com/SonettoGu14/dsh-tokeneconomizer/issues"
   }
 }

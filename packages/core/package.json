@@ -28,5 +28,9 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "homepage": "https://github.com/SonettoGu14/dsh-tokeneconomizer/tree/master/packages/core#readme",
+  "bugs": {
+    "url": "https://github.com/SonettoGu14/dsh-tokeneconomizer/issues"
   }
 }
