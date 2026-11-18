@@ -1,5 +1,5 @@
 {
-  "name": "@sonettogu14/dsh-te",
+  "name": "dsh-te",
   "version": "0.1.1",
   "description": "Install-all bundle for the DSH TokenEconomizer components (cost, facts, prune).",
   "license": "Apache-2.0",
@@ -32,10 +32,10 @@
     "access": "public"
   },
   "dependencies": {
-    "@sonettogu14/dsh-te-core": "workspace:*",
-    "@sonettogu14/dsh-te-cost": "workspace:*",
-    "@sonettogu14/dsh-te-facts": "workspace:*",
-    "@sonettogu14/dsh-te-prune": "workspace:*"
+    "dsh-te-core": "workspace:*",
+    "dsh-te-cost": "workspace:*",
+    "dsh-te-facts": "workspace:*",
+    "dsh-te-prune": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh": ">=0.2.2-rc.3"

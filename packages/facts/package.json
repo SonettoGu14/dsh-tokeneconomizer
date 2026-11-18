@@ -1,5 +1,5 @@
 {
-  "name": "@sonettogu14/dsh-te-facts",
+  "name": "dsh-te-facts",
   "version": "0.1.1",
   "description": "Repository-scoped learned facts injected into the system prompt.",
   "license": "Apache-2.0",
@@ -40,7 +40,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@sonettogu14/dsh-te-core": "workspace:*",
+    "dsh-te-core": "workspace:*",
     "@deepseek-ai/schemastery": "^3.19.0"
   },
   "peerDependencies": {

@@ -53,7 +53,7 @@ Track A/B changes in a throwaway profile; never experiment in the daily one:
 ```sh
 dsh --profile te --from-default-profile headless
 dsh plugin --profile te add link:$PWD/packages/bundle   # also appends to bundles
-dsh --profile te --dump-config | grep sonettogu14       # three rows
+dsh --profile te --dump-config | grep "== dsh-te"       # three te-* rows
 dsh --profile te "Reply with exactly: ok"               # needs a credential
 ```
 
@@ -83,27 +83,31 @@ Gotchas that cost time before (all verified):
   integration one is single-process because every test points `DSH_HOME` at its
   own temp directory.
 
-## Release checklist (P0)
+## Release (walked once, then one command per version)
 
-The code and metadata are ready; only the publish step and its consequences
-remain.
+All five packages are on npm as `0.1.1` under the unscoped names `dsh-te`,
+`dsh-te-core`, `dsh-te-cost`, `dsh-te-facts`, `dsh-te-prune`, published by
+`.github/workflows/publish.yml` through OIDC Trusted Publishing: no token on
+any laptop, and one GitHub Release per tag.
 
-1. Confirm the five names are still free:
-   `for n in dsh-te-core dsh-te-cost dsh-te-facts dsh-te-prune dsh-te; do curl -s -o /dev/null -w "$n %{http_code}\n" "https://registry.npmjs.org/@sonettogu14%2f$n"; done`
-2. `pnpm verify && pnpm release:dry` — inspect the dry-run tarballs: `LICENSE`,
-   `cordis.patch.yml`, `lib/`, `src/`; `workspace:*` must appear as `0.1.0`.
-3. Authenticate without five OTP prompts: create an npm **automation token**
-   (the account's 2FA is `auth-and-writes`) and put it in `~/.npmrc` as
-   `//registry.npmjs.org/:_authToken=...`, or run `pnpm release` and answer each
-   prompt.
-4. `pnpm release` (builds, then publishes topologically: core → components →
-   bundle).
-5. Sanity-check the published surface: `npm view @sonettogu14/dsh-te` for the
-   repository/homepage/bugs links, then install **from npm** in a throwaway
-   profile (`dsh plugin --profile te add @sonettogu14/dsh-te`) and run one
-   headless task — link installs and registry installs differ.
-6. Tag the release (`git tag v0.1.0 && git push --tags`) and write a short
-   release note: what each component does, the defaults, and the evidence caveat.
+The loop for every later version:
+
+1. `pnpm release:dry` — clean tree, free tag, `pnpm verify`, prints the plan.
+2. `pnpm release patch|minor|major|x.y.z` — bumps all five `package.json`
+   files together, commits `release: vX`, tags `vX`, pushes; CI does the rest.
+3. Watch the run: Install → tag/version check → `pnpm verify` → publish →
+   Release. A version that already exists fails at the publish step instead of
+   overwriting.
+
+Every new *package name* needs its own trusted-publisher connection on npmjs.com
+before CI can publish it (Settings → Publishing access → GitHub Actions: owner,
+repository, workflow filename `publish.yml`, environment left empty because the
+workflow declares none, "Allow npm publish" checked). The connection is created
+once and cannot be edited afterwards — delete and recreate rather than repair.
+
+`pnpm publish:local` is the manual fallback and the only path that works when
+Actions is down; it needs a granular npm token in `~/.npmrc`, which cannot
+bypass 2FA for destructive actions such as unpublish or trust management.
 
 ## Roadmap
 
@@ -244,7 +248,7 @@ Known, accepted for now. Each item names why it is not yet fixed.
 | `formatTokens(999_960)` renders `1000.0k` | cosmetic, and the fix changes every command's output | XS |
 | evidence window is a constant (20 tasks) | no data on what it should be; P1 can measure the effect of retiring later | S |
 | unknown model weights are maintained by hand | every published model needs a row; the P5 fallback test is the guard | S |
-| no CI, no CHANGELOG, no SECURITY.md | P0/backlog; none block a release | S |
+| no CHANGELOG, no SECURITY.md | CI publishes and tags, so release notes live in the Release body; neither blocks a release | S |
 | `lib/` is gitignored, so a fresh clone needs `pnpm build` before `link:` install works | documented in the README install section; a `prepare` script covers registry installs | — |
 | two Vitest configs share an alias block | acceptable duplication; unify only if a third project appears | XS |
 
@@ -254,11 +258,15 @@ they are approximations chosen to stay simple, and each says so in its docstring
 
 ## Decisions the owner needs to make
 
-1. **Publish now or after P1?** Publishing reserves the names and gives users
-   something; it also freezes the API shape at a moment when P1 may change
-   defaults. Suggestion: publish `0.1.0` now, let the next change be `0.2.0`.
-2. **Is `@sonettogu14` the final scope?** Renaming a published scope is painful;
-   if an org or brand name is likely, decide before step 1.
+1. ~~Publish now or after P1?~~ **Decided: publish now.** `0.1.1` is live, so
+   the API is frozen at the shape the README documents and the next mechanism
+   change is a minor bump.
+2. ~~Is `@sonettogu14` the final scope?~~ **Decided: unscoped, and it cost less
+   than feared.** The five packages went live scoped and then moved to
+   `dsh-te` / `dsh-te-*` while nothing depended on them. What made it cheap:
+   rename in the tree, publish the new names, reconfigure the trusted
+   publishers, unpublish the old ones — all before a single install existed.
+   Treat the first real user as the point where that freedom ends.
 3. **Measurement or breadth next?** This plan says measurement (P1) before more
    mechanism (P3). If the goal is the opposite — more hooks before proof — say so
    and reorder.

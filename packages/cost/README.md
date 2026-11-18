@@ -1,4 +1,4 @@
-# @sonettogu14/dsh-te-cost
+# dsh-te-cost
 
 Cache-weighted token accounting for DeepSeek Harness. Raw totals mislead —
 most input tokens are cache reads billed at a fraction of a fresh input
@@ -7,7 +7,7 @@ token — so this component folds the four provider buckets
 comparable number: *equivalent fresh-input tokens*.
 
 ```sh
-dsh plugin --profile <profile> add @sonettogu14/dsh-te-cost
+dsh plugin --profile <profile> add dsh-te-cost
 ```
 
 - Observes `session/event` only; never touches the prompt or the tool surface.
@@ -16,6 +16,6 @@ dsh plugin --profile <profile> add @sonettogu14/dsh-te-cost
 - `/te-cost [session|repo]` prints the breakdown.
 
 Part of [dsh-tokeneconomizer](https://github.com/SonettoGu14/dsh-tokeneconomizer) — install
-`@sonettogu14/dsh-te` for all three components. Configuration, the unknown-model
+`dsh-te` for all three components. Configuration, the unknown-model
 fallback and the measurement caveat are documented there.
 Licensed Apache-2.0.

@@ -4,7 +4,7 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { repoKeyDirName, stateRoot } from '@sonettogu14/dsh-te-core'
+import { repoKeyDirName, stateRoot } from 'dsh-te-core'
 import { CostLedger, apply } from '../src/index.ts'
 
 /** Mount the plugin and let Cordis finish loading its fiber. */

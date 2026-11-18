@@ -1,4 +1,4 @@
-# @sonettogu14/dsh-te-core
+# dsh-te-core
 
 Pure functions shared by the `dsh-te-*` components of
 [dsh-tokeneconomizer](https://github.com/SonettoGu14/dsh-tokeneconomizer): the cache-weighted pricing table, token
@@ -9,7 +9,7 @@ This is a library, not a DSH plugin — installing it into a profile does
 nothing. Install one of the components instead:
 
 ```sh
-dsh plugin --profile <profile> add @sonettogu14/dsh-te-cost
+dsh plugin --profile <profile> add dsh-te-cost
 ```
 
 It has no Cordis dependency and no I/O beyond `node:fs`, so it can be unit

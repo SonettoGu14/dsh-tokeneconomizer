@@ -25,7 +25,7 @@
  *
  * Unknown ids take {@link DEFAULT_WEIGHTS} instead of failing: a component may
  * never raise into a session just because a new model id appeared.
- * @module @sonettogu14/dsh-te-core/pricing
+ * @module dsh-te-core/pricing
  */
 
 /** Per-bucket price ratios relative to uncached input tokens (= 1). */

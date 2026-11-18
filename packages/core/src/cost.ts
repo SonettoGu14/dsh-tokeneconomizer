@@ -3,7 +3,7 @@
  *
  * Pure functions only: the plugin owns timers, sessions and files, this module
  * owns the numbers so they can be tested against a hand-computed fixture.
- * @module @sonettogu14/dsh-te-core/cost
+ * @module dsh-te-core/cost
  */
 
 import type { TokenWeights } from './pricing.ts'

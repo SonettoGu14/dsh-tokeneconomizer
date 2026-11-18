@@ -102,5 +102,5 @@ run('git', ['push', 'origin', BRANCH, '--follow-tags']);
 
 console.log(`\n${tag} pushed — npm publish and the GitHub Release run in CI`);
 console.log(`  watch:   gh run list --workflow ${WORKFLOW} --limit 1`);
-console.log('  verify:  npm view @sonettogu14/dsh-te version   (registry lags 1-3 min)');
+console.log('  verify:  npm view dsh-te version   (registry lags 1-3 min)');
 console.log(`  release: gh release view ${tag}`);

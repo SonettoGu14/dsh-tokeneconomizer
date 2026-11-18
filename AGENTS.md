@@ -11,11 +11,11 @@ Three independent plugins for DeepSeek Harness, plus a shared library:
 
 | package | what it does | default |
 |---|---|---|
-| `@sonettogu14/dsh-te-core` | pure functions: pricing weights, token buckets, fact lifecycle, shell parsing, repository keys, atomic storage | — (library) |
-| `@sonettogu14/dsh-te-cost` | folds `session/event` usage into cache-weighted equivalent tokens; `/te-cost` | on |
-| `@sonettogu14/dsh-te-facts` | learns command-form and env-var repairs per repository and injects the live ones; `/te-facts` | on |
-| `@sonettogu14/dsh-te-prune` | hides tools that stayed idle for N sessions; `/te-prune` | **off** |
-| `@sonettogu14/dsh-te` | bundle that inserts all three components | — |
+| `dsh-te-core` | pure functions: pricing weights, token buckets, fact lifecycle, shell parsing, repository keys, atomic storage | — (library) |
+| `dsh-te-cost` | folds `session/event` usage into cache-weighted equivalent tokens; `/te-cost` | on |
+| `dsh-te-facts` | learns command-form and env-var repairs per repository and injects the live ones; `/te-facts` | on |
+| `dsh-te-prune` | hides tools that stayed idle for N sessions; `/te-prune` | **off** |
+| `dsh-te` | bundle that inserts all three components | — |
 
 The mechanisms come from [microsoft/TokenEconomizer](https://github.com/microsoft/TokenEconomizer)
 (Apache-2.0, `arXiv:2610.22732`). The implementation is original TypeScript
@@ -24,10 +24,13 @@ checkout is usually a sibling directory (`../TokenEconomizer`).
 
 ## Current state
 
-Snapshot 2026-11-18, commit `23dde70`:
+Snapshot 2026-11-18:
 
-- five packages at `0.1.0`, **not published to npm yet**; the five names
-  `@sonettogu14/dsh-te{,-core,-cost,-facts,-prune}` were unclaimed when checked.
+- five packages at `0.1.1`, published to npm under the **unscoped** names
+  `dsh-te`, `dsh-te-core`, `dsh-te-cost`, `dsh-te-facts`, `dsh-te-prune`.
+- a release is a pushed tag: `.github/workflows/publish.yml` re-runs
+  `pnpm verify`, publishes all five through OIDC Trusted Publishing and creates
+  the GitHub Release. No npm token lives on any machine.
 - `pnpm verify` green: 113 unit tests, 8 integration tests.
 - repository is public: <https://github.com/SonettoGu14/dsh-tokeneconomizer>.
 - peer range pinned to `@deepseek-ai/dsh >=0.2.2-rc.3 <0.3.0`; every dsh package is
@@ -46,8 +49,9 @@ pnpm typecheck      # tsc -p tsconfig.test.json  (run after build)
 pnpm test           # vitest, packages/*/test (113 unit tests)
 pnpm test:integration  # vitest, test/integration (8 tests, real DSH packages)
 pnpm verify         # build + typecheck + test + test:integration
-pnpm release:dry    # build + pnpm -r publish --dry-run
-pnpm release        # build + pnpm -r publish --access public
+pnpm release:dry    # checks only: clean tree, free tag, verify, prints the plan
+pnpm release patch  # bump all five, commit, tag vX, push; CI publishes
+pnpm publish:local  # manual fallback: publishes from this machine (needs a token)
 ```
 
 Always run `pnpm verify` (or `pnpm build && pnpm typecheck && pnpm test &&
@@ -59,7 +63,7 @@ To try a change in a real session:
 ```sh
 dsh --profile <p> --from-default-profile headless     # once
 dsh plugin --profile <p> add link:$PWD/packages/bundle
-dsh --profile <p> --dump-config | grep sonettogu14   # three rows expected
+dsh --profile <p> --dump-config | grep "== dsh-te"   # three te-* rows
 dsh --profile <p> "Reply with exactly: ok"           # needs an LLM credential
 ```
 
@@ -158,12 +162,17 @@ both `peerDependencies` and `devDependencies` (shared instances require both).
 ## Versioning and release
 
 - `0.x`, semver intent: a mechanism change is a minor bump, a fix is a patch.
-  Bump all five `package.json` files together.
+  `pnpm release patch|minor|major` bumps all five `package.json` files together,
+  commits, tags and pushes; never bump one package alone.
 - Publish order is topological and pnpm handles it: `core` → components →
   bundle. Never publish the bundle before the packages it depends on.
-- Publishing requires npm 2FA (`auth-and-writes`): either an automation token in
-  `~/.npmrc` or an OTP per package. `publishConfig.access` is `public` because
-  scoped packages default to restricted.
+- Publishing runs in CI through OIDC Trusted Publishing: each package name needs
+  its own connection on npmjs.com (Settings → Publishing access → GitHub
+  Actions: owner, repo, workflow `publish.yml`, environment empty). Connections
+  are created once and cannot be edited, so delete and recreate rather than
+  repair. `publishConfig.access` is `public` for all five.
+- The granular token in `~/.npmrc` can run `pnpm publish:local`, but it cannot
+  bypass 2FA for unpublish or trust management — those need the npm website.
 - Record notable changes in the commit message; the README documents user-facing
   behaviour only.
 
@@ -178,11 +187,10 @@ both `peerDependencies` and `devDependencies` (shared instances require both).
 - A 1h cache write is priced as a 5m write, because DSH exposes a single
   `cacheWriteTokens` bucket — the estimate is conservative, and documented.
 
-## Missing infrastructure (see `docs/PLAN.md`, P0/P5)
+## Missing infrastructure (see `docs/PLAN.md`)
 
-- No CI: `pnpm verify` runs locally only. A GitHub Actions workflow over
-  node 24 with `pnpm install && pnpm verify` is the cheapest real improvement.
-- No `CHANGELOG.md` and no changesets; release notes live in commit messages.
+- No `CHANGELOG.md` and no changesets; the GitHub Release body and the commit
+  log are the release notes.
 - No `SECURITY.md`, even though the plugins read agent transcripts (they never
   write content to disk, and the state directory is `0700`).
 

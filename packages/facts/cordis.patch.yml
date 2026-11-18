@@ -2,4 +2,4 @@
 # Install: dsh plugin --profile <name> add link:<repo>/packages/facts
 - insert:
     - id: te-facts
-      name: '@sonettogu14/dsh-te-facts'
+      name: 'dsh-te-facts'

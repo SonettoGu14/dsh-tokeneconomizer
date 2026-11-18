@@ -6,7 +6,7 @@
  * Mirrors TokenEconomizer's rule: an `origin` remote wins (all clones and
  * worktrees of it share what was learned), otherwise the absolute checkout
  * path identifies the repository.
- * @module @sonettogu14/dsh-te-core/repo-key
+ * @module dsh-te-core/repo-key
  */
 
 import { spawnSync } from 'node:child_process'

@@ -2,4 +2,4 @@
 # Install: dsh plugin --profile <name> add link:<repo>/packages/cost
 - insert:
     - id: te-cost
-      name: '@sonettogu14/dsh-te-cost'
+      name: 'dsh-te-cost'

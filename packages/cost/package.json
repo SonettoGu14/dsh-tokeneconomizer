@@ -1,5 +1,5 @@
 {
-  "name": "@sonettogu14/dsh-te-cost",
+  "name": "dsh-te-cost",
   "version": "0.1.1",
   "description": "Cache-weighted equivalent-token accounting for DSH sessions.",
   "license": "Apache-2.0",
@@ -40,7 +40,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@sonettogu14/dsh-te-core": "workspace:*",
+    "dsh-te-core": "workspace:*",
     "@deepseek-ai/schemastery": "^3.19.0"
   },
   "peerDependencies": {

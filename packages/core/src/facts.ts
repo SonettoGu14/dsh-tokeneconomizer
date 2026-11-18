@@ -12,7 +12,7 @@
  * constants and the same asymmetry: evidence decays with distance, and a
  * contradiction costs five times what a confirmation earns.
  *
- * @module @sonettogu14/dsh-te-core/facts
+ * @module dsh-te-core/facts
  */
 
 /** Confirmations in distinct tasks before a fact may be injected. */

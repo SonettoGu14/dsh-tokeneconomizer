@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { repoKeyDirName, resolveRepoKey, stateRoot } from '@sonettogu14/dsh-te-core'
+import { repoKeyDirName, resolveRepoKey, stateRoot } from 'dsh-te-core'
 import { apply, Config } from '../src/index.ts'
 
 const AVAILABLE = ['bash', 'read', 'web_search', 'web_fetch', 'mcp__zotero__search']

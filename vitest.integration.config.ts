@@ -10,7 +10,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   resolve: {
     alias: {
-      '@sonettogu14/dsh-te-core': fileURLToPath(new URL('./packages/core/src/index.ts', import.meta.url)),
+      'dsh-te-core': fileURLToPath(new URL('./packages/core/src/index.ts', import.meta.url)),
     },
   },
   test: {

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { stateRoot, repoKeyDirName, resolveRepoKey } from '@sonettogu14/dsh-te-core'
+import { stateRoot, repoKeyDirName, resolveRepoKey } from 'dsh-te-core'
 import { apply, Config } from '../src/index.ts'
 
 const REPAIR_FAILED = 'bash: pytest: command not found'

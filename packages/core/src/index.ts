@@ -4,7 +4,7 @@
  * Nothing here touches a DSH service or a session: this package is deliberately
  * framework-free so its maths is unit-testable and reusable outside DSH.
  *
- * @module @sonettogu14/dsh-te-core
+ * @module dsh-te-core
  */
 
 export const CORE_VERSION = '0.1.0'

@@ -8,7 +8,7 @@
  * Writes are atomic (temp file in the same directory, then rename), because a
  * component may be writing while another DSH process folds the same repo.
  *
- * @module @sonettogu14/dsh-te-core/storage
+ * @module dsh-te-core/storage
  */
 
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
