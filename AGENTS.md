@@ -22,6 +22,21 @@ The mechanisms come from [microsoft/TokenEconomizer](https://github.com/microsof
 against the Cordis plugin API; `NOTICE` records what is derived. A reference
 checkout is usually a sibling directory (`../TokenEconomizer`).
 
+## Current state
+
+Snapshot 2026-11-18, commit `23dde70`:
+
+- five packages at `0.1.0`, **not published to npm yet**; the five names
+  `@sonettogu14/dsh-te{,-core,-cost,-facts,-prune}` were unclaimed when checked.
+- `pnpm verify` green: 113 unit tests, 8 integration tests.
+- repository is public: <https://github.com/SonettoGu14/dsh-tokeneconomizer>.
+- peer range pinned to `@deepseek-ai/dsh >=0.2.2-rc.3 <0.3.0`; every dsh package is
+  declared in both `peerDependencies` and `devDependencies`.
+
+[`docs/PLAN.md`](docs/PLAN.md) is the roadmap and the handoff note: what is next,
+what was deliberately rejected, and how to measure whether any of it works.
+Read it before starting feature work.
+
 ## Commands
 
 ```sh
@@ -46,6 +61,18 @@ dsh --profile <p> --from-default-profile headless     # once
 dsh plugin --profile <p> add link:$PWD/packages/bundle
 dsh --profile <p> --dump-config | grep sonettogu14   # three rows expected
 dsh --profile <p> "Reply with exactly: ok"           # needs an LLM credential
+```
+
+## Repository layout
+
+```
+packages/core/     pure functions, no Cordis (pricing, buckets, lifecycle, shell, repo key, storage)
+packages/cost/     session/event folding + the teCost service + /te-cost
+packages/facts/    tools/result observation, agent/pre-step injection + /te-facts
+packages/prune/    agent/created tool mask, session idle counters + /te-prune
+packages/bundle/   cordis.patch.yml that inserts all three
+test/integration/  real-composition harness (harness.ts) and its three suites
+docs/PLAN.md       roadmap, priorities, debt and measurement protocol
 ```
 
 ## Layout rules
@@ -150,6 +177,14 @@ both `peerDependencies` and `devDependencies` (shared instances require both).
   proposer yet.
 - A 1h cache write is priced as a 5m write, because DSH exposes a single
   `cacheWriteTokens` bucket — the estimate is conservative, and documented.
+
+## Missing infrastructure (see `docs/PLAN.md`, P0/P5)
+
+- No CI: `pnpm verify` runs locally only. A GitHub Actions workflow over
+  node 24 with `pnpm install && pnpm verify` is the cheapest real improvement.
+- No `CHANGELOG.md` and no changesets; release notes live in commit messages.
+- No `SECURITY.md`, even though the plugins read agent transcripts (they never
+  write content to disk, and the state directory is `0700`).
 
 ## Commit style
 

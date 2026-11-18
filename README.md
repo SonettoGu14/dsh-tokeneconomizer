@@ -253,6 +253,8 @@ packages/cost/    ledger service + /te-cost
 packages/facts/   fact watcher + pre-step injection + /te-facts
 packages/prune/   idle counters + scoped tool restrictions + /te-prune
 packages/bundle/  the install-all patch
+test/integration/ real-composition harness (real dsh packages, scripted model)
+docs/PLAN.md      roadmap, priorities and the measurement protocol
 ```
 
 ## Citation and license
