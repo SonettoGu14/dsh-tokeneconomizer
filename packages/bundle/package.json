@@ -1,7 +1,23 @@
 {
   "name": "dsh-te",
   "version": "0.2.0",
-  "description": "Install-all bundle for the DSH TokenEconomizer components (cost, facts, prune).",
+  "description": "Install-all bundle: cache-weighted cost accounting, repository facts and tool pruning for DeepSeek Harness. · 一键安装整包：为 DeepSeek Harness 提供缓存加权成本记账、仓库事实与工具裁剪。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "插件",
+    "token",
+    "cost",
+    "cache",
+    "context",
+    "token-economizer",
+    "成本",
+    "缓存"
+  ],
   "license": "Apache-2.0",
   "type": "module",
   "exports": {

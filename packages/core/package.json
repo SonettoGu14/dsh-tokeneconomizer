@@ -1,6 +1,20 @@
 {
   "name": "dsh-te-core",
   "version": "0.2.0",
+  "description": "Pure functions behind the ledger: pricing weights, token buckets, fact lifecycle, atomic storage. · 记账用的纯函数：定价权重、token 分桶、事实生命周期与原子存储。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "插件",
+    "token",
+    "cost",
+    "pricing",
+    "library"
+  ],
   "license": "Apache-2.0",
   "type": "module",
   "main": "lib/index.js",

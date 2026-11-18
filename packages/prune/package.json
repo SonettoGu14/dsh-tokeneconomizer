@@ -1,7 +1,21 @@
 {
   "name": "dsh-te-prune",
   "version": "0.2.0",
-  "description": "Evidence-driven tool-set pruning across sessions.",
+  "description": "Evidence-driven tool-set pruning across sessions (opt-in), with /te-prune. · 跨会话按证据隐藏闲置工具（默认关闭），命令 /te-prune。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "插件",
+    "tools",
+    "pruning",
+    "context",
+    "tool-surface",
+    "裁剪"
+  ],
   "license": "Apache-2.0",
   "type": "module",
   "main": "lib/index.js",

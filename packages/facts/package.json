@@ -1,7 +1,22 @@
 {
   "name": "dsh-te-facts",
   "version": "0.2.0",
-  "description": "Repository-scoped learned facts injected into the system prompt.",
+  "description": "Repository-scoped learned facts injected into the system prompt, with /te-facts. · 按仓库学习命令与环境变量修复并注入系统提示，命令 /te-facts。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "插件",
+    "facts",
+    "memory",
+    "prompt",
+    "system-prompt",
+    "shell",
+    "env"
+  ],
   "license": "Apache-2.0",
   "type": "module",
   "main": "lib/index.js",
