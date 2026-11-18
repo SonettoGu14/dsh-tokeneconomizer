@@ -1,6 +1,6 @@
 {
   "name": "dsh-te-prune",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Evidence-driven tool-set pruning across sessions (opt-in), with /te-prune. · 跨会话按证据隐藏闲置工具（默认关闭），命令 /te-prune。",
   "keywords": [
     "dsh",
