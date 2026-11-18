@@ -74,6 +74,11 @@ Gotchas that cost time before (all verified):
   package itself has no `dependencies` other than `schemastery`.
 - On macOS, `mv` of a checkout containing `node_modules` with `.app` bundles can
   deadlock in `rename(2)`. Use `rsync -a --exclude node_modules` and delete after.
+- Network here: the local proxy can fail on TLS (`error:...:SSL connect error`)
+  and a direct push can fail with *"Error in the HTTP2 framing layer"*. A direct
+  connection with `git -c http.version=HTTP/1.1 push origin master` works; check
+  connectivity with `curl -s -o /dev/null -w "%{http_code}" https://api.github.com/rate_limit`
+  before blaming git.
 - `pnpm test` and `pnpm test:integration` are separate Vitest projects; the
   integration one is single-process because every test points `DSH_HOME` at its
   own temp directory.
