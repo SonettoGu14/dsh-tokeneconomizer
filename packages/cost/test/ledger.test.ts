@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { repoKeyDirName, stateRoot } from 'dsh-te-core'
@@ -123,8 +123,11 @@ describe('dsh-te-cost ledger', () => {
 
     const root = stateRoot()
     const record = JSON.parse(await readFile(join(root, 'repos', repoKeyDirName('path:/tmp/repo-persist'), 'cost.json'), 'utf8'))
-    expect(record).toMatchObject({ version: 1, key: 'path:/tmp/repo-persist', sessions: 1 })
+    expect(record).toMatchObject({ version: 2, key: 'path:/tmp/repo-persist', sessions: 1, droppedSessions: 0 })
     expect(record.equivalent).toBeCloseTo(1000, 6)
+    expect(record.history).toHaveLength(1)
+    expect(record.history[0]).toMatchObject({ sessionId: 'sess-0004', equivalent: 1000, weightsSource: 'deepseek-flash' })
+    expect(record.history[0].day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 
     const second = fakeSession('sess-0005', '/tmp/repo-persist')
     ctx.emit('session/event', second, routeEvent('deepseek', 'deepseek-v4.1-flash'))
@@ -135,6 +138,54 @@ describe('dsh-te-cost ledger', () => {
     expect(folded.sessions).toBe(2)
     expect(folded.equivalent).toBeCloseTo(5000, 6)
     expect(folded.buckets.uncachedInput).toBe(5000)
+    expect(folded.history.map((item: { sessionId: string }) => item.sessionId)).toEqual(['sess-0004', 'sess-0005'])
+  })
+
+  it('updates a re-settled session instead of counting it twice', async () => {
+    await mount(ctx, { enabled: true, persist: true })
+    const session = fakeSession('sess-resettle', '/tmp/repo-resettle')
+    ctx.emit('session/event', session, routeEvent('deepseek', 'deepseek-v4.1-flash'))
+    ctx.emit('session/event', session, usageEvent({ inputTokens: 1000, outputTokens: 0 }))
+    await ctx.teCost.settle(session)
+    await ctx.teCost.settle(session)
+
+    const record = JSON.parse(
+      await readFile(join(stateRoot(), 'repos', repoKeyDirName('path:/tmp/repo-resettle'), 'cost.json'), 'utf8'),
+    )
+    // The history replaces by session id, so the totals must not grow either.
+    expect(record.sessions).toBe(1)
+    expect(record.equivalent).toBeCloseTo(1000, 6)
+    expect(record.history).toHaveLength(1)
+  })
+
+  it('upgrades a v1 record and counts its sessions as dropped detail', async () => {
+    const dir = join(stateRoot(), 'repos', repoKeyDirName('path:/tmp/repo-v1'))
+    await mkdir(dir, { recursive: true })
+    await writeFile(
+      join(dir, 'cost.json'),
+      JSON.stringify({
+        version: 1,
+        key: 'path:/tmp/repo-v1',
+        equivalent: 500,
+        buckets: { uncachedInput: 500, cacheRead: 0, cacheWrite: 0, output: 0 },
+        sessions: 2,
+        overhead: {},
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    )
+
+    await mount(ctx, { enabled: true, persist: true })
+    const session = fakeSession('sess-v1', '/tmp/repo-v1')
+    ctx.emit('session/event', session, routeEvent('deepseek', 'deepseek-v4.1-flash'))
+    ctx.emit('session/event', session, usageEvent({ inputTokens: 1000, outputTokens: 0 }))
+    await ctx.teCost.settle(session)
+
+    const record = JSON.parse(await readFile(join(dir, 'cost.json'), 'utf8'))
+    expect(record.version).toBe(2)
+    expect(record.sessions).toBe(3)
+    expect(record.equivalent).toBeCloseTo(1500, 6)
+    expect(record.history).toHaveLength(1)
+    expect(record.droppedSessions).toBe(2)
   })
 
   it('contributes nothing when disabled', async () => {
@@ -171,6 +222,7 @@ describe('session lifecycle and the command', () => {
     }
     expect(result.kind).toBe('success')
     expect(result.text).toContain('repo path:/tmp/repo-command')
+    expect(result.text).toContain('history 1 sessions')
     expect(result.text).toContain('2.0k eq')
     expect(definition?.input?.hint).toContain('repo')
   })

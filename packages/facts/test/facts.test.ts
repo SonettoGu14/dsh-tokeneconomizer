@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -62,7 +62,18 @@ async function learnSession(ctx: Context, id: string): Promise<void> {
 /** Read the stored facts of the throwaway repository. */
 async function storedFacts(): Promise<{
   tasks: number
-  facts: { key: string; state: string; confirms: number[]; fired: number; firedWaste: number }[]
+  facts: {
+    key: string
+    state: string
+    confirms: number[]
+    fired: number
+    firedWaste: number
+    injectedTasks: number[]
+    exercisedTasks: number[]
+    wastedTasks: number[]
+    injectedTokens: number
+    wasteTokens: number
+  }[]
 }> {
   const key = resolveRepoKey(repo).key
   const path = join(stateRoot(), 'repos', repoKeyDirName(key), 'facts.json')
@@ -257,6 +268,100 @@ describe('retirement is not permanent', () => {
     expect(state.facts).toHaveLength(1)
     expect(state.facts[0]?.state).toBe('candidate')
     expect(state.facts[0]?.confirms).toEqual([6])
+  })
+})
+
+describe('injection accounting', () => {
+  /** Learn the repair over four tasks, inject it in a fifth, then end that task. */
+  async function injectAndSettle(ctx: Context, wasteOutput: string | undefined): Promise<void> {
+    for (const id of ['s1', 's2', 's3', 's4']) await learnSession(ctx, id)
+    const session = sessionOf('s5')
+    expect((await preStep(ctx, session, 1, 1)).messages).toHaveLength(1)
+    if (wasteOutput !== undefined) shell(ctx, session, REPAIR_COMMAND[0], false, wasteOutput)
+    await ctx.teFacts.settle(session)
+  }
+
+  it('books the injection against the task it happened in', async () => {
+    const ctx = await mount()
+    await injectAndSettle(ctx, undefined)
+    const fact = (await storedFacts()).facts[0]
+    expect(fact?.injectedTasks).toEqual([5])
+    // The task paid for the injection without ever touching the situation,
+    // which is a different (and worse) outcome than a waste that recurred.
+    expect(fact?.exercisedTasks).toEqual([1, 2, 3, 4])
+    expect(fact?.injectedTokens).toBeGreaterThan(0)
+  })
+
+  it('measures the waste the injection failed to prevent', async () => {
+    const ctx = await mount()
+    await injectAndSettle(ctx, REPAIR_FAILED)
+    const fact = (await storedFacts()).facts[0]
+    expect(fact?.wastedTasks).toEqual([1, 2, 3, 4, 5])
+    // Five failing calls at the same output, priced by the same 4-chars rule.
+    expect(fact?.wasteTokens).toBe(5 * Math.ceil(REPAIR_FAILED.length / 4))
+  })
+
+  it('bills the ledger exactly the header plus every fact line', async () => {
+    const ctx = new Context()
+    const billed: { label: string; tokens: number }[] = []
+    ctx.provide('commands', { register: () => () => {} } as never)
+    ctx.provide('teCost', {
+      recordOverhead: (_target: unknown, label: string, tokens: number) => {
+        billed.push({ label, tokens })
+      },
+    } as never)
+    apply(ctx, { enabled: true, maxFacts: 4, maxChars: 600 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    for (const id of ['s1', 's2', 's3', 's4']) await learnSession(ctx, id)
+    const decision = await preStep(ctx, sessionOf('s5'), 1, 1)
+    const text = decision.messages[0]?.content[0]?.text ?? ''
+    const [header, ...lines] = text.split('\n')
+    const expected = Math.ceil((header ?? '').length / 4) + lines.reduce((sum, line) => sum + Math.ceil(line.length / 4), 0)
+    expect(billed).toEqual([{ label: 'facts', tokens: expected }])
+
+    await ctx.teFacts.settle(sessionOf('s5'))
+    const fact = (await storedFacts()).facts[0]
+    expect(fact?.injectedTokens).toBe(Math.ceil((lines[0] ?? '').length / 4))
+  })
+
+  it('reads a v1 facts file and fills in what v2 records', async () => {
+    const key = resolveRepoKey(repo).key
+    const dir = join(stateRoot(), 'repos', repoKeyDirName(key))
+    await mkdir(dir, { recursive: true })
+    await writeFile(
+      join(dir, 'facts.json'),
+      JSON.stringify({
+        version: 1,
+        key,
+        tasks: 6,
+        facts: [
+          {
+            key: 'form-repair:pytest:pytest',
+            family: 'form-repair',
+            intent: 'pytest',
+            text: '`pytest` fails here; use `python -m pytest` instead',
+            confirms: [1, 2, 3],
+            contradicts: [],
+            fired: 3,
+            firedWaste: 3,
+            state: 'active',
+          },
+        ],
+      }),
+    )
+
+    const ctx = await mount()
+    const session = sessionOf('s7')
+    shell(ctx, session, REPAIR_COMMAND[0], false, REPAIR_FAILED)
+    shell(ctx, session, REPAIR_COMMAND[1], true)
+    await ctx.teFacts.settle(session)
+
+    const state = await storedFacts()
+    expect(state.tasks).toBe(7)
+    expect(state.facts).toHaveLength(1)
+    expect(state.facts[0]?.injectedTasks).toEqual([])
+    expect(state.facts[0]?.exercisedTasks).toEqual([7])
   })
 })
 

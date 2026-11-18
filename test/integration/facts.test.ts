@@ -44,6 +44,15 @@ describe('facts, end to end', () => {
     expect(injected).toHaveLength(1)
     expect(injected[0]!.text).toContain('Facts learned from earlier sessions in this repository')
     expect(injected[0]!.text).toContain('`python -m pytest` fails here')
+
+    // Ending the session books the spend against the task it happened in.
+    await harness.end(agent)
+    const state = harness.readRepo('facts.json') as
+      | { version: number; facts: { injectedTasks: number[]; injectedTokens: number }[] }
+      | undefined
+    expect(state?.version).toBe(2)
+    expect(state?.facts[0]?.injectedTasks).toEqual([4])
+    expect(state?.facts[0]?.injectedTokens).toBeGreaterThan(0)
   })
 
   it('injects nothing when the stored fact is not qualified', async () => {

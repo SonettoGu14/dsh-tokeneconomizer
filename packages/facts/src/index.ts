@@ -33,14 +33,18 @@ import {
   contradicted,
   exercised,
   extractFacts,
+  formatTokens,
   injectable,
+  injectionSplit,
   readJson,
   recordExercise,
+  recordInjection,
   repoKeyDirName,
   resolveRepoKey,
   score,
   stateRoot,
   wasteRecurred,
+  wastedCalls,
   writeJsonAtomic,
   type FactLifecycle,
   type ShellCall,
@@ -75,18 +79,30 @@ interface StoredFact extends FactLifecycle {
 
 /** The learned state of one repository. */
 interface RepoFacts {
-  version: 1
+  version: 2
   key: string
   /** Sessions that ended in this repository; the lifecycle clock. */
   tasks: number
   facts: StoredFact[]
 }
 
+/** One fact that was actually shown to the model, and what its line cost. */
+interface InjectedFact {
+  readonly key: string
+  readonly tokens: number
+}
+
 /** What one live session has shown us so far. */
 interface SessionWatch {
   calls: ShellCall[]
-  /** Fact keys injected into this session, or undefined before the decision. */
-  injected?: string[]
+  /**
+   * Facts injected into this session, or undefined before the decision.
+   *
+   * The share of the injected text is carried here rather than written to the
+   * store at injection time: the ordinal is only known at settle, and a hot
+   * path should not add a write.
+   */
+  injected?: readonly InjectedFact[]
 }
 
 /** How many facts one repository may keep; lowest-value facts go first. */
@@ -113,9 +129,26 @@ function isStoredFact(value: unknown): value is StoredFact {
   )
 }
 
+/** Fill the bookkeeping a pre-0.2.0 record does not carry. */
+function withHistory(fact: StoredFact): StoredFact {
+  return {
+    ...fact,
+    injectedTasks: Array.isArray(fact.injectedTasks) ? fact.injectedTasks : [],
+    exercisedTasks: Array.isArray(fact.exercisedTasks) ? fact.exercisedTasks : [],
+    wastedTasks: Array.isArray(fact.wastedTasks) ? fact.wastedTasks : [],
+    injectedTokens: typeof fact.injectedTokens === 'number' ? fact.injectedTokens : 0,
+    wasteTokens: typeof fact.wasteTokens === 'number' ? fact.wasteTokens : 0,
+  }
+}
+
 /** Whether this session is a subagent child rather than a top-level task. */
 function isSubagent(session: Session): boolean {
   return session.header?.origin === 'subagent'
+}
+
+/** Equivalent tokens for a piece of injected or failed output, at 4 chars each. */
+function tokensOf(text: string): number {
+  return Math.ceil(text.length / 4)
 }
 
 function textOf(result: ToolExecutionResult): string {
@@ -143,19 +176,36 @@ function repoFactsPath(key: string): string {
   return join(stateRoot(), 'repos', repoKeyDirName(key), 'facts.json')
 }
 
-/** Render the injected block for a set of facts. */
-function render(facts: readonly StoredFact[], maxChars: number): string | undefined {
+/** A rendered block plus what each of its lines costs. */
+interface Rendered {
+  readonly text: string
+  readonly headerTokens: number
+  readonly perFact: readonly InjectedFact[]
+}
+
+/**
+ * Render the injected block for a set of facts.
+ *
+ * Per-line tokens are returned alongside the text so the same number can be
+ * billed to the ledger and stored against the fact. They are counted per line
+ * rather than by sharing out the whole string, which is why the ledger bills
+ * the header separately: the two sums then agree exactly instead of "almost".
+ */
+function render(facts: readonly StoredFact[], maxChars: number): Rendered | undefined {
   if (facts.length === 0 || maxChars <= 0) return undefined
   const header = 'Facts learned from earlier sessions in this repository (verify before relying):'
   const lines: string[] = [header]
+  const perFact: InjectedFact[] = []
   let used = header.length
   for (const fact of facts) {
     const line = `- ${fact.text}`
     if (used + line.length + 1 > maxChars) break
     lines.push(line)
+    perFact.push({ key: fact.key, tokens: tokensOf(line) })
     used += line.length + 1
   }
-  return lines.length > 1 ? lines.join('\n') : undefined
+  if (lines.length === 1) return undefined
+  return { text: lines.join('\n'), headerTokens: tokensOf(header), perFact }
 }
 
 /**
@@ -247,11 +297,16 @@ export class Facts extends Service {
     const key = resolveRepoKey(session.header?.cwd ?? process.cwd()).key
     const cached = this.repos.get(key)
     if (cached !== undefined) return cached
-    const stored = await readJson<RepoFacts>(repoFactsPath(key))
-    const repo: RepoFacts =
-      stored !== undefined && stored.version === 1 && Array.isArray(stored.facts)
-        ? { ...stored, key, facts: stored.facts.filter(isStoredFact) }
-        : { version: 1, key, tasks: 0, facts: [] }
+    const stored = await readJson<{ version?: number; tasks?: number; facts?: unknown[] }>(repoFactsPath(key))
+    // v1 is readable: the fields this version adds are filled in place rather
+    // than the whole repository being thrown away.
+    const readable = stored !== undefined && (stored.version === 1 || stored.version === 2) && Array.isArray(stored.facts)
+    const repo: RepoFacts = {
+      version: 2,
+      key,
+      tasks: readable && typeof stored.tasks === 'number' ? stored.tasks : 0,
+      facts: readable ? (stored?.facts ?? []).filter(isStoredFact).map(withHistory) : [],
+    }
     this.repos.set(key, repo)
     return repo
   }
@@ -274,20 +329,22 @@ export class Facts extends Service {
     watch.injected = []
     const repo = await this.repoOf(session)
     const facts = this.worthInjecting(repo)
-    const text = render(facts, this.config.maxChars)
-    if (text === undefined) return undefined
-    watch.injected = facts.map((fact) => fact.key)
-    this.bill(session, text)
+    const rendered = render(facts, this.config.maxChars)
+    if (rendered === undefined) return undefined
+    watch.injected = rendered.perFact
+    this.bill(session, rendered)
     return createUserMessage({
-      content: [{ type: 'text', text }],
+      content: [{ type: 'text', text: rendered.text }],
       source: { kind: 'dsh-te-facts', form: 'notice' },
     })
   }
 
   /** Count the injected text as this component's own overhead, when a ledger is present. */
-  private bill(session: Session, text: string): void {
+  private bill(session: Session, rendered: Rendered): void {
     const ledger = this.ctx.get('teCost') as { recordOverhead?: (target: Session, label: string, tokens: number) => void } | undefined
-    ledger?.recordOverhead?.(session, 'facts', Math.ceil(text.length / 4))
+    let total = rendered.headerTokens
+    for (const fact of rendered.perFact) total += fact.tokens
+    ledger?.recordOverhead?.(session, 'facts', total)
   }
 
   /**
@@ -308,8 +365,12 @@ export class Facts extends Service {
     for (const fact of [...repo.facts]) {
       if (fact.state === 'retired') continue
       const arose = exercised(calls, fact.key)
+      // The same calls answer both questions: whether the waste happened, and
+      // what it cost. Pricing it here is what makes a later payback sum real.
+      const wasted = wastedCalls(calls, fact.key)
       const waste = wasteRecurred(calls, fact.key)
-      let next: StoredFact = { ...fact, ...recordExercise(fact, arose, waste) }
+      const wasteTokens = wasted.reduce((total, call) => total + tokensOf(call.output), 0)
+      let next: StoredFact = { ...fact, ...recordExercise(fact, ordinal, arose, waste, wasteTokens) }
       if (contradicted(calls, fact.key)) {
         // The claim was false here: fail toward retirement, never toward
         // re-injection of something the repository has already disproved.
@@ -318,6 +379,14 @@ export class Facts extends Service {
         next = { ...next, ...confirm(next, ordinal) }
       }
       this.replace(repo, next)
+    }
+
+    // The injections this session actually made are booked here, where its
+    // ordinal is known, rather than guessed at injection time.
+    for (const injected of watch?.injected ?? []) {
+      const fact = repo.facts.find((candidate) => candidate.key === injected.key)
+      if (fact === undefined) continue
+      this.replace(repo, { ...fact, ...recordInjection(fact, ordinal, injected.tokens) })
     }
 
     for (const candidate of learned.values()) {
@@ -331,8 +400,15 @@ export class Facts extends Service {
       }
       // The session that taught us the fact exercised it too: it saw both the
       // failure and the repair, so it is the first entry in the firing record.
+      const wasted = wastedCalls(calls, candidate.key)
       repo.facts.push({
-        ...recordExercise(NEW_LIFECYCLE, true, true),
+        ...recordExercise(
+          NEW_LIFECYCLE,
+          ordinal,
+          true,
+          true,
+          wasted.reduce((total, call) => total + tokensOf(call.output), 0),
+        ),
         ...candidate,
         confirms: [ordinal],
       })
@@ -373,7 +449,14 @@ export class Facts extends Service {
       .sort((left, right) => score(right, ordinal) - score(left, ordinal))
       .map((fact) => {
         const rate = fact.fired === 0 ? '—' : `${Math.round((fact.firedWaste / fact.fired) * 100)}%`
-        return `${fact.state.padEnd(9)} score ${score(fact, ordinal).toFixed(2).padStart(5)}  fired ${rate.padStart(4)}  ${fact.text}`
+        const split = injectionSplit(fact)
+        // Only facts that were shown carry a spend; a candidate that has never
+        // been injected says nothing rather than printing a row of zeros.
+        const spend =
+          split.injectedTasks === 0
+            ? ''
+            : `  inj ${split.injectedTasks}/${formatTokens(split.injectedTokens)}eq  after ${split.after.waste}/${split.after.tasks}`
+        return `${fact.state.padEnd(9)} score ${score(fact, ordinal).toFixed(2).padStart(5)}  fired ${rate.padStart(4)}${spend}  ${fact.text}`
       })
     return [`Facts for ${key} (${repo.tasks} sessions)`, ...lines].join('\n')
   }

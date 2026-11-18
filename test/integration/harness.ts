@@ -83,6 +83,8 @@ export interface Harness {
   agent(): Promise<{ id: string; stop(): Promise<void> }>
   /** Submit one user turn and wait until the agent goes idle. */
   turn(handle: { id: string }, text?: string): Promise<void>
+  /** Run one slash command as this agent, through the real command service. */
+  command(handle: { id: string }, line: string): Promise<{ kind: 'success' | 'error'; text?: string } | undefined>
   /** End one session and wait for durable state (`session/flush`). */
   end(handle: { id: string }): Promise<void>
   /** Read a JSON file under this repository's state directory. */
@@ -238,6 +240,9 @@ export async function startHarness(options: StartOptions = {}): Promise<Harness>
   ctx.llm.registerAdapter(['integration-provider'], adapter as never)
 
   const handles = new Map<string, Awaited<ReturnType<typeof ctx.agents.create>>>()
+  // Monotonic, not `handles.size`: ending a session frees its slot, and two
+  // sessions sharing an id would be folded as one.
+  let created = 0
   const statePath = (relative: string): string => join(stateDir, STATE_NAMESPACE, relative)
   const repoDirPath = (): string => join(statePath('repos'), repoKeyDirName(resolveRepoKey(project.root).key))
 
@@ -263,16 +268,17 @@ export async function startHarness(options: StartOptions = {}): Promise<Harness>
       )
     },
     async agent() {
-      const created = await ctx.agents.create({
-        sessionId: `session-${handles.size + 1}` as never,
+      created += 1
+      const record = await ctx.agents.create({
+        sessionId: `session-${created}` as never,
         agentOptions: { provider: 'integration-provider', model: 'integration-model' },
         meta: { cwd: project.root },
       } as never)
-      handles.set(created.agent.id as unknown as string, created)
+      handles.set(record.agent.id as unknown as string, record)
       return {
-        id: created.agent.id as unknown as string,
+        id: record.agent.id as unknown as string,
         stop: async () => {
-          await created.dispose()
+          await record.dispose()
         },
       }
     },
@@ -283,6 +289,12 @@ export async function startHarness(options: StartOptions = {}): Promise<Harness>
         createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }),
       )
       await created.agent.whenIdle()
+    },
+    async command(handle, line) {
+      const created = handles.get(handle.id)
+      if (created === undefined) throw new Error(`unknown agent ${handle.id}`)
+      const execution = await ctx.commands.execute(created.agent, line, [], new AbortController().signal)
+      return execution?.result
     },
     async end(handle) {
       const created = handles.get(handle.id)

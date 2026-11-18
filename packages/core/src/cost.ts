@@ -129,3 +129,95 @@ export function foldUsage(accumulator: CostAccumulator, sample: UsageSample, wei
     messages: accumulator.messages + 1,
   }
 }
+
+/** How many finished sessions a repository keeps day-level detail for. */
+export const HISTORY_CAP = 400
+
+/**
+ * One finished session, as the trend reports need it.
+ *
+ * The aggregate record cannot answer "is this getting worse?" — it only moves
+ * up. One entry per session can, at the cost of a few hundred bytes each, so
+ * the cap keeps a long-lived repository from growing without bound.
+ */
+export interface SessionHistoryEntry {
+  /** The DSH session id; the key that makes a re-settle an update, not a duplicate. */
+  readonly sessionId: string
+  /** Local calendar day the session ended, `YYYY-MM-DD`; trend buckets are days. */
+  readonly day: string
+  readonly startedAt: string
+  readonly endedAt: string
+  readonly equivalent: number
+  readonly buckets: TokenBuckets
+  readonly overhead: Record<string, number>
+  readonly weightsSource: string
+  /** A delegated child session: counted in the totals, excluded from per-session averages. */
+  readonly subagent?: true
+}
+
+/**
+ * The local calendar day of an instant.
+ *
+ * Local, not UTC: a session that ends at 23:30 belongs to that day for the
+ * person who ran it, whatever the timezone offset.
+ *
+ * @param iso - an ISO timestamp.
+ * @returns `YYYY-MM-DD`, or an empty string for an unparsable instant.
+ */
+export function localDay(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+/**
+ * Insert one session entry, replacing an earlier entry for the same session.
+ *
+ * A session can be settled more than once (resume, a second flush), and a
+ * duplicate entry would double-count it in every average.
+ *
+ * @param history - entries so far, oldest first.
+ * @param entry - the entry to add or replace.
+ * @returns a new array; the input is not mutated.
+ */
+export function upsertHistory(
+  history: readonly SessionHistoryEntry[],
+  entry: SessionHistoryEntry,
+): SessionHistoryEntry[] {
+  const index = history.findIndex((candidate) => candidate.sessionId === entry.sessionId)
+  if (index < 0) return [...history, entry]
+  const next = [...history]
+  next[index] = entry
+  return next
+}
+
+/**
+ * Drop the oldest entries beyond the cap.
+ * @param history - entries, oldest first.
+ * @param cap - how many to keep.
+ * @returns the kept entries and how many were dropped.
+ */
+export function capHistory(
+  history: readonly SessionHistoryEntry[],
+  cap: number = HISTORY_CAP,
+): { entries: SessionHistoryEntry[]; dropped: number } {
+  const dropped = Math.max(0, history.length - cap)
+  return { entries: dropped === 0 ? [...history] : history.slice(dropped), dropped }
+}
+
+/** Whether a stored entry is still shaped the way this version writes it. */
+export function isSessionHistoryEntry(value: unknown): value is SessionHistoryEntry {
+  if (value === null || typeof value !== 'object') return false
+  const entry = value as Partial<SessionHistoryEntry>
+  return (
+    typeof entry.sessionId === 'string' &&
+    typeof entry.day === 'string' &&
+    typeof entry.equivalent === 'number' &&
+    typeof entry.endedAt === 'string' &&
+    typeof entry.weightsSource === 'string' &&
+    typeof entry.buckets === 'object' &&
+    entry.buckets !== null
+  )
+}

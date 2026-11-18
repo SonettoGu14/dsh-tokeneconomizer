@@ -23,20 +23,26 @@ import z from '@deepseek-ai/schemastery'
 import {
   DEFAULT_WEIGHTS,
   EMPTY_ACCUMULATOR,
+  HISTORY_CAP,
   ZERO_BUCKETS,
   addBuckets,
   bucketsTotal,
+  capHistory,
   foldUsage,
+  isSessionHistoryEntry,
+  localDay,
   formatTokens,
   readJson,
   repoKeyDirName,
   resolveRepoKey,
   sampleBuckets,
   stateRoot,
+  upsertHistory,
   weightsFor,
   writeJsonAtomic,
   type CostAccumulator,
   type RepoIdentity,
+  type SessionHistoryEntry,
   type TokenBuckets,
   type TokenWeights,
 } from 'dsh-te-core'
@@ -69,6 +75,8 @@ interface ReportedUsage {
 /** One session's running totals. */
 interface SessionCost {
   acc: CostAccumulator
+  /** When this session first reported usage; the history entry's lower bound. */
+  startedAt: string
   overhead: Record<string, number>
   provider?: string
   model?: string
@@ -80,13 +88,89 @@ interface SessionCost {
 
 /** What `<...>/repos/<dir>/cost.json` holds. */
 interface RepoCostRecord {
-  version: 1
+  version: 2
   key: string
   equivalent: number
   buckets: TokenBuckets
   sessions: number
   overhead: Record<string, number>
   updatedAt: string
+  /** Finished sessions, oldest first; bounded by `HISTORY_CAP`. */
+  history: SessionHistoryEntry[]
+  /** Sessions the cap dropped, so `droppedSessions + history.length` still equals `sessions`. */
+  droppedSessions: number
+}
+
+/** A stored record as it may appear on disk: any version, any damage. */
+interface StoredCostRecord {
+  version?: number
+  key?: string
+  equivalent?: number
+  buckets?: TokenBuckets
+  sessions?: number
+  overhead?: Record<string, number>
+  updatedAt?: string
+  history?: unknown
+  droppedSessions?: number
+}
+
+/**
+ * Bring a stored record up to this version.
+ *
+ * A v1 file has totals but no per-session detail: its sessions are counted as
+ * dropped so the arithmetic still closes, and the trend starts empty rather
+ * than inventing a past.
+ */
+function normalizeRecord(stored: StoredCostRecord): RepoCostRecord {
+  const sessions = typeof stored.sessions === 'number' ? stored.sessions : 0
+  const history = Array.isArray(stored.history) ? stored.history.filter(isSessionHistoryEntry) : []
+  return {
+    version: 2,
+    key: stored.key ?? '',
+    equivalent: typeof stored.equivalent === 'number' ? stored.equivalent : 0,
+    buckets: stored.buckets ?? ZERO_BUCKETS,
+    sessions,
+    overhead: stored.overhead ?? {},
+    updatedAt: stored.updatedAt ?? '',
+    history,
+    droppedSessions:
+      typeof stored.droppedSessions === 'number' ? stored.droppedSessions : Math.max(0, sessions - history.length),
+  }
+}
+
+/**
+ * Remove one entry's contribution from a record's totals.
+ *
+ * A session can settle twice (resume, a second teardown). Without this, the
+ * aggregates would double-count it while `history` — which replaces by session
+ * id — kept a single row, and `sessions` would stop equalling
+ * `history.length + droppedSessions`.
+ */
+function withoutEntry(
+  record: RepoCostRecord,
+  entry: SessionHistoryEntry,
+): { equivalent: number; buckets: TokenBuckets; overhead: Record<string, number> } {
+  const overhead: Record<string, number> = { ...record.overhead }
+  for (const [label, tokens] of Object.entries(entry.overhead)) {
+    const left = (overhead[label] ?? 0) - tokens
+    if (left > 0) overhead[label] = left
+    else delete overhead[label]
+  }
+  return {
+    equivalent: record.equivalent - entry.equivalent,
+    buckets: {
+      uncachedInput: record.buckets.uncachedInput - entry.buckets.uncachedInput,
+      cacheRead: record.buckets.cacheRead - entry.buckets.cacheRead,
+      cacheWrite: record.buckets.cacheWrite - entry.buckets.cacheWrite,
+      output: record.buckets.output - entry.buckets.output,
+    },
+    overhead,
+  }
+}
+
+/** Whether this session is a delegated child rather than a top-level task. */
+function isSubagent(session: Session): boolean {
+  return session.header?.origin === 'subagent'
 }
 
 /** A read-only view of one session's accounting. */
@@ -231,8 +315,10 @@ export class CostLedger extends Service {
     const cached = this.repoCache.get(repo.key)
     if (cached !== undefined) return cached
     if (!this.config.persist) return undefined
-    const record = await readJson<RepoCostRecord>(this.recordPath(repo.key))
-    if (record !== undefined) this.repoCache.set(repo.key, record)
+    const stored = await readJson<StoredCostRecord>(this.recordPath(repo.key))
+    if (stored === undefined) return undefined
+    const record = normalizeRecord(stored)
+    this.repoCache.set(repo.key, record)
     return record
   }
 
@@ -273,6 +359,12 @@ export class CostLedger extends Service {
             `  buckets uncached ${formatTokens(record.buckets.uncachedInput)} · cache read ${formatTokens(record.buckets.cacheRead)} · cache write ${formatTokens(record.buckets.cacheWrite)} · output ${formatTokens(record.buckets.output)}`,
           )
           lines.push(`  overhead ${formatTokens(overheadTotal(record.overhead))} eq${describeOverhead(record.overhead)}`)
+          const latest = record.history[record.history.length - 1]
+          lines.push(
+            record.history.length === 0
+              ? '  history none yet (per-session detail is recorded from v0.2.0)'
+              : `  history ${record.history.length} sessions · latest ${latest?.day ?? '—'}${record.droppedSessions > 0 ? ` · ${record.droppedSessions} dropped` : ''}`,
+          )
         }
       }
     }
@@ -285,6 +377,7 @@ export class CostLedger extends Service {
     if (existing !== undefined) return existing
     const created: SessionCost = {
       acc: EMPTY_ACCUMULATOR,
+      startedAt: new Date().toISOString(),
       overhead: {},
       weights: DEFAULT_WEIGHTS,
       weightsSource: 'default',
@@ -342,14 +435,40 @@ export class CostLedger extends Service {
   private async persist(session: Session, state: SessionCost, repo: RepoIdentity): Promise<void> {
     try {
       const previous = await this.repoSnapshot(session)
+      const endedAt = new Date().toISOString()
+      const entry: SessionHistoryEntry = {
+        sessionId: session.id,
+        day: localDay(endedAt),
+        startedAt: state.startedAt,
+        endedAt,
+        equivalent: state.acc.equivalent,
+        buckets: state.acc.buckets,
+        overhead: { ...state.overhead },
+        weightsSource: state.weightsSource,
+        ...(isSubagent(session) ? { subagent: true as const } : {}),
+      }
+      const history = previous?.history ?? []
+      const earlier = history.find((candidate) => candidate.sessionId === session.id)
+      const totals =
+        previous === undefined || earlier === undefined
+          ? {
+              equivalent: previous?.equivalent ?? 0,
+              buckets: previous?.buckets ?? ZERO_BUCKETS,
+              overhead: previous?.overhead ?? {},
+              sessions: previous?.sessions ?? 0,
+            }
+          : { ...withoutEntry(previous, earlier), sessions: previous.sessions }
+      const capped = capHistory(upsertHistory(history, entry), HISTORY_CAP)
       const next: RepoCostRecord = {
-        version: 1,
+        version: 2,
         key: repo.key,
-        equivalent: (previous?.equivalent ?? 0) + state.acc.equivalent,
-        buckets: addBuckets(previous?.buckets ?? ZERO_BUCKETS, state.acc.buckets),
-        sessions: (previous?.sessions ?? 0) + 1,
-        overhead: mergeOverhead(previous?.overhead ?? {}, state.overhead),
-        updatedAt: new Date().toISOString(),
+        equivalent: totals.equivalent + state.acc.equivalent,
+        buckets: addBuckets(totals.buckets, state.acc.buckets),
+        sessions: earlier === undefined ? totals.sessions + 1 : totals.sessions,
+        overhead: mergeOverhead(totals.overhead, state.overhead),
+        updatedAt: endedAt,
+        history: capped.entries,
+        droppedSessions: (previous?.droppedSessions ?? 0) + capped.dropped,
       }
       await writeJsonAtomic(this.recordPath(repo.key), next)
       this.repoCache.set(repo.key, next)

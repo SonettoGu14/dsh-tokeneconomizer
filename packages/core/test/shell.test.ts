@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { errorClassOf, extractFacts, formOf, intentOf, missingEnvOf, wasteRecurred } from '../src/index.ts'
+import { errorClassOf, extractFacts, formOf, intentOf, missingEnvOf, wasteRecurred, wastedCalls } from '../src/index.ts'
 
 describe('intent', () => {
   it('looks through the way a tool was invoked', () => {
@@ -109,5 +109,17 @@ describe('wasteRecurred', () => {
     const calls = [{ command: 'python build.py', ok: false, output: 'API_KEY is not set' }]
     expect(wasteRecurred(calls, 'env-value:python build.py:API_KEY')).toBe(true)
     expect(wasteRecurred(calls, 'env-value:python build.py:OTHER_KEY')).toBe(false)
+  })
+})
+
+describe('wastedCalls', () => {
+  it('returns every call that paid for the same waste, not just the first', () => {
+    const calls = [
+      { command: 'pytest', ok: false, output: 'bash: pytest: command not found' },
+      { command: 'python -m pytest', ok: true, output: '' },
+      { command: 'pytest', ok: false, output: 'bash: pytest: command not found' },
+    ]
+    expect(wastedCalls(calls, 'form-repair:pytest:pytest')).toHaveLength(2)
+    expect(wastedCalls(calls, 'form-repair:jest:jest')).toEqual([])
   })
 })

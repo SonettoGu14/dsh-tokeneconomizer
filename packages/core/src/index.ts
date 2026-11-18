@@ -26,20 +26,28 @@ export type { TokenWeights } from './pricing.ts'
 
 export {
   EMPTY_ACCUMULATOR,
+  HISTORY_CAP,
   ZERO_BUCKETS,
   addBuckets,
   bucketsTotal,
+  capHistory,
   equivalentTokens,
+  isSessionHistoryEntry,
+  localDay,
   sampleBuckets,
   sampleEquivalent,
   foldUsage,
+  upsertHistory,
 } from './cost.ts'
-export type { CostAccumulator, TokenBuckets, UsageSample } from './cost.ts'
+export type { CostAccumulator, SessionHistoryEntry, TokenBuckets, UsageSample } from './cost.ts'
 
 export { gitOriginRemote, gitTopLevel, normalizeRemoteUrl, repoKeyDirName, resolveRepoKey } from './repo-key.ts'
 export type { RemoteReader, RepoIdentity, RepoKeySource, TopLevelReader } from './repo-key.ts'
 
 export { formatTokens } from './format.ts'
+
+export { parseArgs } from './args.ts'
+export type { ParsedArgs } from './args.ts'
 
 export { STATE_DIR_NAME, expandHome, readJson, resolveDshHome, stateRoot, writeJsonAtomic } from './storage.ts'
 
@@ -57,10 +65,12 @@ export {
   contradict,
   firingRate,
   injectable,
+  injectionSplit,
   recordExercise,
+  recordInjection,
   score,
 } from './facts.ts'
-export type { FactLifecycle, FactState } from './facts.ts'
+export type { FactLifecycle, FactState, InjectionSplit, InjectionWindow } from './facts.ts'
 
 export {
   contradicted,
@@ -71,5 +81,6 @@ export {
   intentOf,
   missingEnvOf,
   wasteRecurred,
+  wastedCalls,
 } from './shell.ts'
 export type { FactCandidate, ShellCall } from './shell.ts'

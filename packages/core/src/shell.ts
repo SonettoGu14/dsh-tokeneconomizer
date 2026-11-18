@@ -344,31 +344,41 @@ export function extractFacts(calls: readonly ShellCall[]): FactCandidate[] {
 }
 
 /**
- * Whether this session shows the waste a fact claims to prevent.
+ * The calls in which a session shows the waste a fact claims to prevent.
  *
  * A form fact's waste is its exact failing form; an env fact's waste is the same
- * form asking for the same variable. Used to decide whether injected facts are
- * still paying for themselves.
+ * form asking for the same variable. Returning the calls rather than a boolean
+ * is what lets the same evidence be counted *and* priced: the ledger needs the
+ * tokens those failures burned, not just whether they happened.
  *
+ * @param calls - the session's shell calls.
+ * @param key - the fact's stable key.
+ * @returns the failing calls the fact warns about, in order.
+ */
+export function wastedCalls(calls: readonly ShellCall[], key: string): ShellCall[] {
+  const { family, first, second } = keyParts(key)
+  if (family === 'form-repair') {
+    const [, intent = '', failingForm = ''] = key.split(':')
+    return calls.filter(
+      (call) => !call.ok && intentOf(call.command) === intent && formOf(call.command) === failingForm,
+    )
+  }
+  if (family === 'env-value' && second !== undefined) {
+    return calls.filter(
+      (call) => !call.ok && formOf(call.command) === first && missingEnvOf(call.output) === second,
+    )
+  }
+  return []
+}
+
+/**
+ * Whether this session shows the waste a fact claims to prevent.
  * @param calls - the session's shell calls.
  * @param key - the fact's stable key.
  * @returns true when the failure the fact warns about happened anyway.
  */
 export function wasteRecurred(calls: readonly ShellCall[], key: string): boolean {
-  const { family, first, second } = keyParts(key)
-  if (family === 'form-repair') {
-    const [, intent = '', failingForm = ''] = key.split(':')
-    return calls.some(
-      (call) => !call.ok && intentOf(call.command) === intent && formOf(call.command) === failingForm,
-    )
-  }
-  if (family === 'env-value' && second !== undefined) {
-    return calls.some(
-      (call) =>
-        !call.ok && formOf(call.command) === first && missingEnvOf(call.output) === second,
-    )
-  }
-  return false
+  return wastedCalls(calls, key).length > 0
 }
 
 /**

@@ -59,6 +59,20 @@ export interface FactLifecycle {
   /** Of those, tasks where the waste it prevents still happened. */
   readonly firedWaste: number
   readonly state: FactState
+  /**
+   * Task ordinals in which this fact was shown to the model, in the order it
+   * happened. The first entry divides the record into "before" and "after",
+   * which is the only comparison a single arm can honestly make.
+   */
+  readonly injectedTasks: readonly number[]
+  /** Task ordinals in which its situation arose, injected or not. */
+  readonly exercisedTasks: readonly number[]
+  /** Task ordinals in which the waste it warns about still happened. */
+  readonly wastedTasks: readonly number[]
+  /** Equivalent tokens spent showing it: the price side of the ledger. */
+  readonly injectedTokens: number
+  /** Equivalent tokens the waste it warns about has cost, as measured from transcripts. */
+  readonly wasteTokens: number
 }
 
 /** A fact that has never been observed. */
@@ -68,6 +82,11 @@ export const NEW_LIFECYCLE: FactLifecycle = Object.freeze({
   fired: 0,
   firedWaste: 0,
   state: 'candidate',
+  injectedTasks: [],
+  exercisedTasks: [],
+  wastedTasks: [],
+  injectedTokens: 0,
+  wasteTokens: 0,
 })
 
 /**
@@ -159,16 +178,108 @@ export function contradict(life: FactLifecycle, now: number): FactLifecycle {
  * what lets a fact be measured *before* it is ever injected, and what stops an
  * unexercised fact from looking like a free win.
  *
+ * The counts (`fired`, `firedWaste`) and the ordinals are two views of one
+ * record: the counts drive the injection gate, the ordinals let a report split
+ * the same evidence into before and after injection.
+ *
  * @param life - lifecycle so far.
+ * @param ordinal - the task the exercise belongs to.
  * @param exercised - whether the task touched the fact's situation at all.
  * @param waste - whether the waste the fact prevents happened in this task.
+ * @param wasteTokens - equivalent tokens that waste cost, when it happened.
  * @returns the updated lifecycle.
  */
-export function recordExercise(life: FactLifecycle, exercised: boolean, waste: boolean): FactLifecycle {
+export function recordExercise(
+  life: FactLifecycle,
+  ordinal: number,
+  exercised: boolean,
+  waste: boolean,
+  wasteTokens = 0,
+): FactLifecycle {
   if (!exercised) return life
+  // One task is one piece of evidence, however many times it is reported.
+  if (life.exercisedTasks.includes(ordinal)) return life
   return {
     ...life,
     fired: life.fired + 1,
     firedWaste: life.firedWaste + (waste ? 1 : 0),
+    exercisedTasks: [...life.exercisedTasks, ordinal],
+    wastedTasks: waste ? [...life.wastedTasks, ordinal] : life.wastedTasks,
+    wasteTokens: life.wasteTokens + (waste ? Math.max(0, wasteTokens) : 0),
+  }
+}
+
+/**
+ * Record one task in which the fact was actually shown.
+ *
+ * Injection is recorded apart from exercise because the two answer different
+ * questions: exercise is the opportunity, injection is the spend. A fact that
+ * was injected into tasks where its situation never arose cost tokens for
+ * nothing, and that is only visible if the two are kept separate.
+ *
+ * @param life - lifecycle so far.
+ * @param ordinal - the task the fact was injected into.
+ * @param tokens - equivalent tokens the injected text cost.
+ * @returns the updated lifecycle.
+ */
+export function recordInjection(life: FactLifecycle, ordinal: number, tokens: number): FactLifecycle {
+  if (life.state === 'retired') return life
+  if (life.injectedTasks.includes(ordinal)) return life
+  return {
+    ...life,
+    injectedTasks: [...life.injectedTasks, ordinal],
+    injectedTokens: life.injectedTokens + Math.max(0, tokens),
+  }
+}
+
+/** How many exercised tasks a count refers to, and how many of them were wasteful. */
+export interface InjectionWindow {
+  readonly tasks: number
+  readonly waste: number
+}
+
+/**
+ * One fact's record split around its first injection.
+ *
+ * No control group exists: the tasks before the first injection are the only
+ * baseline a repository gives us, and they were run by the same agent in the
+ * same repository, so they are worth reporting — but a drop after injection is
+ * a correlation, not a proof.
+ */
+export interface InjectionSplit {
+  /** Tasks the fact was injected into. */
+  readonly injectedTasks: number
+  /** Equivalent tokens it has cost. */
+  readonly injectedTokens: number
+  /** Exercised tasks before the first injection. */
+  readonly before: InjectionWindow
+  /** Exercised tasks from the first injection onward. */
+  readonly after: InjectionWindow
+}
+
+/**
+ * Split one fact's exercise record around its first injection.
+ * @param life - the fact's lifecycle.
+ * @returns counts before and after, plus what the injections cost.
+ */
+export function injectionSplit(life: FactLifecycle): InjectionSplit {
+  const first = life.injectedTasks[0]
+  const window = (from: number, until: number): InjectionWindow => ({
+    tasks: life.exercisedTasks.filter((ordinal) => ordinal >= from && ordinal < until).length,
+    waste: life.wastedTasks.filter((ordinal) => ordinal >= from && ordinal < until).length,
+  })
+  if (first === undefined) {
+    return {
+      injectedTasks: 0,
+      injectedTokens: life.injectedTokens,
+      before: window(Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY),
+      after: { tasks: 0, waste: 0 },
+    }
+  }
+  return {
+    injectedTasks: life.injectedTasks.length,
+    injectedTokens: life.injectedTokens,
+    before: window(Number.NEGATIVE_INFINITY, first),
+    after: window(first, Number.POSITIVE_INFINITY),
   }
 }

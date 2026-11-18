@@ -21,9 +21,21 @@ describe('cost, end to end', () => {
 
     expect(harness.requests).toHaveLength(1)
     const record = harness.readRepo('cost.json') as
-      | { equivalent: number; buckets: Record<string, number>; sessions: number }
+      | {
+          version: number
+          equivalent: number
+          buckets: Record<string, number>
+          sessions: number
+          history: { sessionId: string; day: string; equivalent: number }[]
+          droppedSessions: number
+        }
       | undefined
     expect(record).toBeDefined()
+    expect(record?.version).toBe(2)
+    expect(record?.history).toHaveLength(1)
+    expect(record?.history[0]?.equivalent).toBeCloseTo(211.25, 6)
+    expect(record?.history[0]?.day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(record?.droppedSessions).toBe(0)
     // Default weights for an unlisted model: 1 / 0.1 / 1.25 / 5.
     // 100×1 + 50×0.1 + 5×1.25 + 20×5 = 211.25
     expect(record?.buckets).toEqual({
@@ -51,11 +63,29 @@ describe('cost, end to end', () => {
     await harness.end(second)
 
     const record = harness.readRepo('cost.json') as
-      | { equivalent: number; sessions: number; buckets: Record<string, number> }
+      | {
+          equivalent: number
+          sessions: number
+          buckets: Record<string, number>
+          history: { sessionId: string }[]
+        }
       | undefined
     // Two requests of 10×1 + 2×5 = 20 each.
     expect(record?.sessions).toBe(2)
     expect(record?.equivalent).toBeCloseTo(40, 6)
     expect(record?.buckets.uncachedInput).toBe(20)
+    expect(record?.history).toHaveLength(2)
+  })
+
+  it('answers /te-cost repo with the history it recorded', async () => {
+    harness = await startHarness({ components: ['cost'] })
+    const first = await harness.agent()
+    await harness.turn(first)
+    await harness.end(first)
+
+    const second = await harness.agent()
+    const result = await harness.command(second, '/te-cost repo')
+    expect(result?.kind).toBe('success')
+    expect(result?.text).toContain('history 1 sessions')
   })
 })
