@@ -1,6 +1,6 @@
 {
   "name": "@sonettogu14/dsh-te-facts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Repository-scoped learned facts injected into the system prompt.",
   "license": "Apache-2.0",
   "type": "module",
