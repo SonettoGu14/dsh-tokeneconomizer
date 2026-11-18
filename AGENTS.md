@@ -26,12 +26,17 @@ checkout is usually a sibling directory (`../TokenEconomizer`).
 
 Snapshot 2026-11-18:
 
-- five packages at `0.1.1`, published to npm under the **unscoped** names
+- five packages at `0.2.0`, published to npm under the **unscoped** names
   `dsh-te`, `dsh-te-core`, `dsh-te-cost`, `dsh-te-facts`, `dsh-te-prune`.
 - a release is a pushed tag: `.github/workflows/publish.yml` re-runs
   `pnpm verify`, publishes all five through OIDC Trusted Publishing and creates
   the GitHub Release. No npm token lives on any machine.
-- `pnpm verify` green: 113 unit tests, 8 integration tests.
+  `.github/workflows/verify.yml` runs the same `pnpm verify` on every push to
+  master and every pull request.
+- `pnpm verify` green: 146 unit tests, 9 integration tests.
+- 0.2.0 records what a trend needs: `cost.json` v2 keeps a per-session
+  `history`, `facts.json` v2 keeps per-fact injection and waste token counts.
+  Readers still accept v1 files.
 - repository is public: <https://github.com/SonettoGu14/dsh-tokeneconomizer>.
 - peer range pinned to `@deepseek-ai/dsh >=0.2.2-rc.3 <0.3.0`; every dsh package is
   declared in both `peerDependencies` and `devDependencies`.
@@ -46,8 +51,8 @@ Read it before starting feature work.
 pnpm install        # node >= 24.9, pnpm 11.28.5 via packageManager
 pnpm build          # tsc -b (project references; lib/ is gitignored)
 pnpm typecheck      # tsc -p tsconfig.test.json  (run after build)
-pnpm test           # vitest, packages/*/test (113 unit tests)
-pnpm test:integration  # vitest, test/integration (8 tests, real DSH packages)
+pnpm test           # vitest, packages/*/test (146 unit tests)
+pnpm test:integration  # vitest, test/integration (9 tests, real DSH packages)
 pnpm verify         # build + typecheck + test + test:integration
 pnpm release:dry    # checks only: clean tree, free tag, verify, prints the plan
 pnpm release patch  # bump all five, commit, tag vX, push; CI publishes
@@ -191,6 +196,9 @@ both `peerDependencies` and `devDependencies` (shared instances require both).
 
 ## Missing infrastructure (see `docs/PLAN.md`)
 
+- The reports the roadmap calls for (`/te-facts stats`, `/te-cost trend`,
+  `--json`) do not exist yet: 0.2.0 only started recording the history they need,
+  so there is nothing to trend until a few sessions have run.
 - No `CHANGELOG.md` and no changesets; the GitHub Release body and the commit
   log are the release notes.
 - No `SECURITY.md`, even though the plugins read agent transcripts (they never

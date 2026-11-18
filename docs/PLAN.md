@@ -1,20 +1,21 @@
 # Development plan and handoff
 
-Status: **0.1.0 implemented, not published**. This document is the map for
-whoever picks the project up next (human or agent): where it stands, what is
-worth doing in which order, what was deliberately rejected, and how to tell
-whether a change actually helped.
+Status: **0.2.0 implemented and published; measurement is the next step.** This
+document is the map for whoever picks the project up next (human or agent): where
+it stands, what is worth doing in which order, what was deliberately rejected,
+and how to tell whether a change actually helped.
 
-Snapshot 2026-11-18, commit `23dde70`:
+Snapshot 2026-11-18:
 
 | fact | value |
 |---|---|
-| packages | 5 × `0.1.0`, publishable config in place |
-| npm | **nothing published**; the five names were unclaimed when last checked |
+| packages | 5 × `0.2.0` |
+| npm | `dsh-te` / `dsh-te-``{core,cost,facts,prune}` published by CI through OIDC Trusted Publishing |
 | repository | public, `github.com/SonettoGu14/dsh-tokeneconomizer` |
-| tests | 113 unit + 8 integration, `pnpm verify` green |
+| tests | 146 unit + 9 integration, `pnpm verify` green |
+| CI | `verify.yml` on every push and PR; `publish.yml` on `v*` tags |
 | pin | `@deepseek-ai/dsh >=0.2.2-rc.3 <0.3.0` |
-| code | ~3.8k lines TypeScript across 5 packages, no runtime dependency but `schemastery` |
+| code | ~3.9k lines TypeScript across 5 packages, no runtime dependency but `schemastery` |
 
 ## Where it stands
 
@@ -45,7 +46,7 @@ central open question and the only thing worth prioritising over everything else
 
 ```sh
 pnpm install && pnpm build      # lib/ is gitignored; `prepare` builds too
-pnpm verify                     # 113 unit + 8 integration tests
+pnpm verify                     # 146 unit + 9 integration tests
 ```
 
 Track A/B changes in a throwaway profile; never experiment in the daily one:
@@ -114,27 +115,51 @@ bypass 2FA for destructive actions such as unpublish or trust management.
 Ordered by value per unit of work. Each item has an acceptance criterion so it
 can be closed without an argument.
 
-### P0 — ship the distribution loop
+### P0 — ship the distribution loop — **done**
 
-Publish `0.1.0` (above) and add CI: `.github/workflows/verify.yml` running
-`pnpm install && pnpm verify` on node 24 for pushes and PRs. Right now the only
-thing standing between a typo and a published package is a local command.
-
-**Done when** the five packages resolve from npm and a red PR fails CI.
+The five packages resolve from npm as `0.2.0`, published by `publish.yml` on a
+`v*` tag through OIDC Trusted Publishing (no token anywhere), and
+`.github/workflows/verify.yml` runs the same `pnpm verify` on node 24 for pushes
+to master and for pull requests.
 
 ### P1 — prove or disprove the value (highest priority)
 
-Everything else is speculative until this exists. The mechanisms already record
-what is needed — `facts.json` has `fired`/`firedWaste` per fact, `cost.json` has
-per-repository equivalents and session counts — but nothing aggregates it into a
-claim.
+Everything else is speculative until this exists. **The recording half is done in
+0.2.0**; the reporting half is the next version.
 
-Build a report first (cheap, no new behaviour):
+0.2.0 changed what is stored, because the old shape could not answer the
+question: `cost.json` only had running totals, so no trend could be computed, and
+`facts.json` only had `fired`/`firedWaste` counts, so no fact's own cost could be
+weighed against what it prevented.
+
+- `cost.json` v2 — `history[]`, one entry per session (day, `equivalent`, buckets,
+  overhead split by component, `weightsSource`, subagent flag), capped at 400
+  entries with `droppedSessions` keeping the arithmetic closed. Re-settling a
+  session replaces its entry instead of double-counting it.
+- `facts.json` v2 — per fact: `injectedTasks`/`injectedTokens` (when its text was
+  actually injected, and what that text cost), `exercisedTasks` (sessions where
+  the mistake could recur), `wastedTasks`/`wasteTokens` (how often and how
+  expensively it did recur). The injection decision itself — `injectable()`,
+  score, `FIRE_GATE` — was not touched; this only books what already happened.
+
+Still missing, and deliberately not guessed at: a denominator for "did
+injecting reduce errors". `facts` can name the sessions that exercised a fact,
+but there is no baseline error rate to compare against, so the report must show
+absolute counts and a break-even (n* = injected tokens ÷ waste per failure) and
+say what it cannot know. An `earning` verdict with `k = 0` observations is not
+proof of anything.
+
+Build the report next (cheap, no new behaviour):
 
 - `/te-facts stats` (or a `--json` flag): per repository, facts by state, firing
-  rate, how many sessions injected, which facts were retired and why.
+  rate, how many sessions injected, which facts were retired and why, and per
+  fact the break-even next to the observations it actually has.
 - `/te-cost trend`: equivalents per session over time for one repository, with
   the session count, so a before/after comparison is possible at all.
+- `/te-cost repos`: the repositories the ledger knows, so a trend can be asked
+  for without listing the state directory first.
+
+All three read the v2 records above; none of them may change behaviour.
 
 Then run the experiment, which is the honest part:
 
@@ -245,7 +270,8 @@ Known, accepted for now. Each item names why it is not yet fixed.
 |---|---|---|
 | `shell.ts` option table is heuristic (`VALUE_FLAGS`) | a wrong entry can name the wrong command form; only fixtures cover it, and every new CLI adds a case | S |
 | `repo-key` collision rules (ports, case folding, `.git`, top-level) | covered by tests but still a rule set that will meet a host it did not anticipate | S |
-| `formatTokens(999_960)` renders `1000.0k` | cosmetic, and the fix changes every command's output | XS |
+| waste is priced at `ceil(characters / 4)` tokens | the harness reports no per-token count for a tool result; it is the same estimate the context UI uses, and it is marked `approx` where shown | S |
+| `history` keeps 400 sessions and drops the rest | an unbounded file in a state directory is worse than a trend starting 400 sessions ago; `droppedSessions` keeps the arithmetic honest | XS |
 | evidence window is a constant (20 tasks) | no data on what it should be; P1 can measure the effect of retiring later | S |
 | unknown model weights are maintained by hand | every published model needs a row; the P5 fallback test is the guard | S |
 | no CHANGELOG, no SECURITY.md | CI publishes and tags, so release notes live in the Release body; neither blocks a release | S |
@@ -253,8 +279,8 @@ Known, accepted for now. Each item names why it is not yet fixed.
 | two Vitest configs share an alias block | acceptable duplication; unify only if a third project appears | XS |
 
 Deliberate non-fixes (documented, will not be "fixed" without a reason): the 1h
-cache-write estimate, `formatTokens` rounding, and the shell heuristics above —
-they are approximations chosen to stay simple, and each says so in its docstring.
+cache-write estimate and the shell heuristics above — they are approximations
+chosen to stay simple, and each says so in its docstring.
 
 ## Decisions the owner needs to make
 

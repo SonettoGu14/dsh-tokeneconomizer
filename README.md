@@ -92,7 +92,12 @@ the provider's real price ratios.
 - Counts the components' own spending: `recordOverhead(session, label, tokens)`
   puts injected text on the same books, so a saving cannot be manufactured by
   moving cost into the plugin.
-- `/te-cost [session|repo]` prints the breakdown.
+- Keeps a rolling per-session history (last 400 sessions: day, equivalent tokens,
+  buckets, overhead, weight source, whether it was a subagent) beside the
+  repository totals, so change over time is measurable instead of remembered.
+  Re-settling a session updates its entry rather than counting it twice.
+- `/te-cost [session|repo]` prints the breakdown; `repo` also names the recorded
+  history.
 
 Unknown models fall back to a default weight table, recorded as
 `weightsSource: 'default'` rather than failing: a plugin must never be able to
@@ -116,7 +121,14 @@ stops being injected — and a later session that contradicts it retires it.
   4 facts / 600 characters.
 - Stores the repair itself — the failing and working command forms of one intent,
   plus environment variable *names*. Never file contents, never output text.
-- `/te-facts` lists what it knows, with state, score and firing rate.
+- Books what the injection cost and what it prevented: each fact records the
+  sessions its text was injected into, their token cost, the sessions that
+  exercised it, and the wasted output of the failures it was meant to stop.
+  Without those three numbers the "does injecting this pay for itself" question
+  has no answer that is not a guess.
+- `/te-facts` lists what it knows, with state, score and firing rate, plus
+  `inj N/Xeq` (injected into N sessions for X equivalent tokens) and
+  `after w/t` (the waste seen after the first injection).
 
 Ported constants: `K_PROMOTE=3`, `GAMMA=0.8`, `LAMBDA=5.0`, `FIRE_GATE=0.40`,
 `FIRE_MIN_N=4`.
@@ -163,13 +175,27 @@ set it:
 State lives in `$DSH_HOME/dsh-tokeneconomizer/` (default `~/.dsh/`), partitioned
 by repository key. Writes are atomic (`tmp` + `rename`), reads never throw.
 
+## Reading the ledger after a few sessions
+
+Two files accumulate, both plain JSON:
+
+- `repos/<key>/cost.json` — `history[]` has one entry per session: day,
+  `equivalent`, the four buckets, the components' overhead, and the weight source.
+- `repos/<key>/facts.json` — per fact, `injectedTasks`/`injectedTokens` (what the
+  injected block cost), `exercisedTasks` (sessions where the mistake could
+  recur), `wastedTasks`/`wasteTokens` (how often and how expensively it did).
+
+`/te-cost repo` and `/te-facts` print the same numbers without opening them. A
+session is written when it ends, so the entry for the session you are in appears
+after it closes, not during it.
+
 ## Verification
 
 ```sh
 pnpm build             # tsc -b over the four source packages
 pnpm typecheck         # tsc -p tsconfig.test.json, includes all tests
-pnpm test              # vitest: 113 unit tests
-pnpm test:integration  # vitest: 8 integration tests against real DSH packages
+pnpm test              # vitest: 146 unit tests
+pnpm test:integration  # vitest: 9 integration tests against real DSH packages
 pnpm verify            # all four, in that order
 ```
 
@@ -188,11 +214,14 @@ no credentials, no model. What they assert is exactly what the components claim:
 
 - **cost** — the four buckets the fake adapter reports (`100` uncached, `50`
   cache-read, `5` cache-write, `20` output) land in `cost.json` unchanged and
-  fold to `equivalent: 211.25`; two sessions in one repository accumulate.
+  fold to `equivalent: 211.25`; two sessions in one repository accumulate, each
+  with its own history entry, and `/te-cost repo` run from a later session
+  reports that history through the real command service.
 - **facts** — a qualified fact is present as a `dsh-te-facts` message in the
   *first model request* (not merely in state), and disappears when the fire gate
   is not met; a real failing `python -m pytest` followed by a working `pytest`
-  in the same session teaches the fact end to end.
+  in the same session teaches the fact end to end; and the session that received
+  the injection records it against the task it happened in.
 - **prune** — an idle tool is absent from the request's `toolNames` while the
   registry still knows it (hidden, not unregistered); a tool below the threshold
   survives; `write` is never hidden.
