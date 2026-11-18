@@ -1,6 +1,6 @@
 {
   "name": "dsh-te-cost",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Cache-weighted equivalent-token accounting for DSH sessions.",
   "license": "Apache-2.0",
   "type": "module",
