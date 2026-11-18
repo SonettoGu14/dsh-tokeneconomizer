@@ -3,3 +3,17 @@ packages:
 
 verifyDepsBeforeRun: false
 confirmModulesPurge: false
+
+# pnpm 11 fails `pnpm install` as soon as a dependency's build script was not
+# approved, which turns a clean CI checkout into ERR_PNPM_IGNORED_BUILDS while a
+# warm local node_modules keeps working. These five postinstall scripts are
+# native builds (node-pty, koffi, protobufjs, ...) that neither the plugins nor
+# the tests need, so record them as deliberately ignored and let the check warn
+# instead of fail.
+strictDepBuilds: false
+ignoredBuiltDependencies:
+  - '@deepseek-ai/dsh-subprocess-local'
+  - '@google/genai'
+  - koffi
+  - node-pty
+  - protobufjs
