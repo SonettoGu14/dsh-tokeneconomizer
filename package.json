@@ -12,8 +12,10 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.test.json --pretty false",
     "prepare": "tsc -b",
-    "release": "pnpm build && pnpm -r publish --access public --no-git-checks",
-    "release:dry": "pnpm build && pnpm -r publish --dry-run --access public --no-git-checks",
+    "release": "node scripts/release.mjs",
+    "release:dry": "node scripts/release.mjs --dry-run",
+    "publish:local": "pnpm build && pnpm -r publish --access public --no-git-checks",
+    "publish:dry": "pnpm build && pnpm -r publish --dry-run --access public --no-git-checks",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "verify": "pnpm build && pnpm typecheck && pnpm test && pnpm test:integration"
   },

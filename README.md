@@ -53,15 +53,23 @@ dsh --profile <profile> --dump-config | grep -A2 "== @sonettogu14"
 Set `enabled: false` in the row's `config` to keep a component installed but
 dormant.
 
-Maintainer release, once the version is bumped in `packages/*/package.json`:
+Maintainer release: one command, no npm token anywhere.
 
 ```sh
-pnpm release:dry    # build + `pnpm -r publish --dry-run`, packs all five
-pnpm release        # build + `pnpm -r publish --access public --no-git-checks`
+pnpm release:dry    # checks only: clean tree, tag free, verify, prints the plan
+pnpm release patch  # bump all five, commit, tag v<version>, push; CI publishes
 ```
 
-`prepublishOnly` builds each package, `files` ships `lib/`, and pnpm rewrites
-the intra-workspace `workspace:*` dependencies to the published versions. The components have no dependency on each other: `cost`, `facts` and
+The tag is the release. `.github/workflows/publish.yml` re-runs `pnpm verify`,
+refuses a tag that disagrees with `package.json`, publishes all five packages
+topologically through OIDC Trusted Publishing, and creates the GitHub Release.
+Nothing to keep on a laptop: a lost token cannot publish, and a version that
+already exists fails rather than being overwritten. `pnpm publish:local` is the
+fallback when CI is unavailable and does need a token in `~/.npmrc`.
+
+`prepublishOnly` builds each package, `files` ships `lib/` and `src/`, and pnpm
+rewrites the intra-workspace `workspace:*` dependencies to the published
+versions. The components have no dependency on each other: `cost`, `facts` and
 `prune` depend only on `@sonettogu14/dsh-te-core`, and the one cross-component
 interaction (`facts` reporting its own injected tokens to `cost`) is a soft,
 optional lookup — lose the ledger and facts still work.

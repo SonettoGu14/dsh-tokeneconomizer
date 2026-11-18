@@ -1,0 +1,55 @@
+name: publish
+
+# Tag-triggered release: `pnpm release patch` bumps all five packages, commits,
+# tags v<version> and pushes. GitHub Actions then publishes through OIDC
+# (Trusted Publishing) and creates the GitHub Release, so no npm token is kept
+# on any machine.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # OIDC token for Trusted Publishing
+  contents: write   # gh release create
+
+concurrency:
+  group: publish-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          # Reads packageManager from package.json (pnpm 11.x), which is the
+          # only version whose publish recognises OIDC.
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          # engines.node is >=24.9.0. No registry-url on purpose: it would
+          # write an .npmrc with an empty NODE_AUTH_TOKEN and send publish down
+          # the token path instead of OIDC.
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Tag matches package.json
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+
+      - name: Verify
+        run: pnpm verify
+
+      - name: Publish (trusted publishing, no token)
+        run: pnpm -r publish --access public --no-git-checks
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
