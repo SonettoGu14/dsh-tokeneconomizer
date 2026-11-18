@@ -52,7 +52,7 @@ Track A/B changes in a throwaway profile; never experiment in the daily one:
 
 ```sh
 dsh --profile te --from-default-profile headless
-dsh plugin --profile te add link:$PWD/packages/bundle   # also appends to bundles
+dsh plugin --profile te add link:$PWD/packages/bundle   # then list "dsh-te" in dsh.profile.bundles
 dsh --profile te --dump-config | grep "== dsh-te"       # three te-* rows
 dsh --profile te "Reply with exactly: ok"               # needs a credential
 ```

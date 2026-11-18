@@ -7,6 +7,7 @@ attempts are still recurring.
 
 ```sh
 dsh plugin --profile <profile> add dsh-te-facts
+# then add "dsh-te-facts" to dsh.profile.bundles in that profile's package.json
 ```
 
 - A repair is promoted only after three separate sessions confirm it, and

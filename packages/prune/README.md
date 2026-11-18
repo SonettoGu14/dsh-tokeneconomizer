@@ -6,6 +6,7 @@ sessions a tool has gone unused, and hides it after `idleSessions` (default 5).
 
 ```sh
 dsh plugin --profile <profile> add dsh-te-prune
+# then add "dsh-te-prune" to dsh.profile.bundles in that profile's package.json
 ```
 
 **Off by default.** Hiding a tool changes the cached request prefix, so it is

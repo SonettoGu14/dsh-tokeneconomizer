@@ -8,6 +8,7 @@ comparable number: *equivalent fresh-input tokens*.
 
 ```sh
 dsh plugin --profile <profile> add dsh-te-cost
+# then add "dsh-te-cost" to dsh.profile.bundles in that profile's package.json
 ```
 
 - Observes `session/event` only; never touches the prompt or the tool surface.

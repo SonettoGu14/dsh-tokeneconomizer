@@ -14,12 +14,34 @@ three of its mechanisms against a plugin API TokenEconomizer did not have.
 
 ## Install
 
-From the npm registry (0.1.0 and later):
+From the npm registry:
 
 ```sh
 dsh plugin --profile <profile> add dsh-te          # all three
 dsh plugin --profile <profile> add dsh-te-cost     # or one at a time
 ```
+
+That installs the package; it does not activate it. A package only takes effect
+when the profile lists it as a bundle layer, so add the same name to
+`dsh.profile.bundles` in `~/.dsh/profiles/<profile>/package.json` — last, so its
+rows apply after the shipped layers:
+
+```json
+"dsh": {
+  "profile": {
+    "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-headless", "dsh-te"]
+  }
+}
+```
+
+Then confirm three rows appear:
+
+```sh
+dsh --profile <profile> --dump-config | grep "== dsh-te"
+```
+
+Set `enabled: false` in a row's `config` to keep a component installed but
+dormant; that is how `dsh-te-prune` ships.
 
 From a checkout, build once first: a `link:` install links sources and keeps
 their `node_modules`, but it does not run the build for you, and the packages
@@ -28,30 +50,9 @@ resolve their entry points from `lib/`.
 ```sh
 pnpm install
 pnpm build          # tsc -b -> packages/*/lib
+dsh plugin --profile <profile> add link:<repo>/packages/bundle   # or .../cost
 ```
 
-Then install the component, or components, into a profile. One component, on its
-own — that is a supported way to use this:
-
-```sh
-dsh plugin --profile <profile> add link:<repo>/packages/cost
-```
-
-All three at once, through the bundle:
-
-```sh
-dsh plugin --profile <profile> add link:<repo>/packages/bundle
-```
-
-`dsh plugin add` appends the package to `dsh.profile.bundles` in that profile's
-`package.json` because every package declares `dsh.bundle.patch`. Confirm with:
-
-```sh
-dsh --profile <profile> --dump-config | grep "== dsh-te"
-```
-
-Set `enabled: false` in the row's `config` to keep a component installed but
-dormant.
 
 Maintainer release: one command, no npm token anywhere.
 

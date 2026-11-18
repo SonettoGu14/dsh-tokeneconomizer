@@ -5,6 +5,7 @@ command.
 
 ```sh
 dsh plugin --profile <profile> add dsh-te
+# then add "dsh-te" to dsh.profile.bundles in that profile's package.json
 ```
 
 It is a `cordis.patch.yml` and four dependencies — no code of its own. Each

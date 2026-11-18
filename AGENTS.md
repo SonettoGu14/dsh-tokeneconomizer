@@ -63,6 +63,8 @@ To try a change in a real session:
 ```sh
 dsh --profile <p> --from-default-profile headless     # once
 dsh plugin --profile <p> add link:$PWD/packages/bundle
+# then append "dsh-te" to dsh.profile.bundles in that profile's package.json:
+# plugin add only installs the package, it does not register the bundle layer
 dsh --profile <p> --dump-config | grep "== dsh-te"   # three te-* rows
 dsh --profile <p> "Reply with exactly: ok"           # needs an LLM credential
 ```
