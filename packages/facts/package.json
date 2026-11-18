@@ -1,6 +1,6 @@
 {
   "name": "dsh-te-facts",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Repository-scoped learned facts injected into the system prompt.",
   "license": "Apache-2.0",
   "type": "module",
