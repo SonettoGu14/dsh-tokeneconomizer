@@ -1,6 +1,6 @@
 {
   "name": "dsh-te",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Install-all bundle: cache-weighted cost accounting, repository facts and tool pruning for DeepSeek Harness. · 一键安装整包：为 DeepSeek Harness 提供缓存加权成本记账、仓库事实与工具裁剪。",
   "keywords": [
     "dsh",
