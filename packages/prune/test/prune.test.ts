@@ -7,7 +7,21 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { repoKeyDirName, resolveRepoKey, stateRoot } from 'dsh-te-core'
 import { apply, Config } from '../src/index.ts'
 
-const AVAILABLE = ['bash', 'read', 'web_search', 'web_fetch', 'mcp__zotero__search']
+const AVAILABLE = [
+  'bash',
+  'read',
+  'web_search',
+  'web_fetch',
+  'mcp__zotero__search',
+  'acp_cache',
+  'acp_read_original_image',
+  'acp_restore',
+  'acp_retire',
+  'acp_retrieve',
+  'acp_rewrite',
+  'acp_rule',
+  'acp_status',
+]
 
 let home: string
 let repo: string
@@ -153,6 +167,27 @@ describe('hiding', () => {
     await createAgent(ctx, sessionOf('s3'))
     expect(restricted[0]?.deny).not.toContain('bash')
     expect(restricted[0]?.deny).not.toContain('read')
+  })
+
+  it('never hides the external compressor tools', async () => {
+    // The model is told these exist by that compressor's own prompt sections;
+    // hiding them would leave it calling a tool that is no longer there.
+    const ctx = await mount({ idleSessions: 2 })
+    for (const id of ['s1', 's2']) await session(ctx, id, [])
+    await createAgent(ctx, sessionOf('s3'))
+    expect(restricted[0]?.deny).toContain('web_search')
+    for (const name of [
+      'acp_cache',
+      'acp_read_original_image',
+      'acp_restore',
+      'acp_retire',
+      'acp_retrieve',
+      'acp_rewrite',
+      'acp_rule',
+      'acp_status',
+    ]) {
+      expect(restricted[0]?.deny).not.toContain(name)
+    }
   })
 
   it('hides at most maxHidden tools', async () => {

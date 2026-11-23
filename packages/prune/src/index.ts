@@ -68,6 +68,18 @@ const ALWAYS_PROTECTED: readonly string[] = [
   'compress',
   'decompress',
   'search_context',
+  // The external compressor's own tools, including the ones its feature flags
+  // register later: hiding a tool the model was told to call leaves it reaching
+  // for something that is not there. `acp_read_original_image` is the only way
+  // back to the pixels that compressor downscaled.
+  'acp_cache',
+  'acp_read_original_image',
+  'acp_restore',
+  'acp_retire',
+  'acp_retrieve',
+  'acp_rewrite',
+  'acp_rule',
+  'acp_status',
   'skill',
   'read_image',
 ]
@@ -339,8 +351,11 @@ export class Prune extends Service {
     if (repo === undefined || repo.sessions === 0) return `Nothing measured yet for ${key}.`
     const watch = this.watching.get(session.id)
     const keep = this.protectedNames()
-    const rows = Object.entries(repo.tools)
-      .filter(([tool]) => !keep.has(tool))
+    const candidates = Object.entries(repo.tools).filter(([tool]) => !keep.has(tool))
+    // Width from the data: an MCP tool name is routinely longer than the 18 the
+    // fixed header assumed, and a ragged table reads as broken output.
+    const width = Math.max(18, ...candidates.map(([tool]) => tool.length))
+    const rows = candidates
       .sort((left, right) => right[1].idle - left[1].idle)
       .map(([tool, record]) => {
         const state = repo.restored.includes(tool)
@@ -348,7 +363,7 @@ export class Prune extends Service {
           : record.idle >= this.config.idleSessions
             ? 'hidden next session'
             : 'visible'
-        return `${tool.padEnd(18)} idle ${String(record.idle).padStart(2)}/${this.config.idleSessions}  uses ${String(record.uses).padStart(3)}  ${state}`
+        return `${tool.padEnd(width)} idle ${String(record.idle).padStart(2)}/${this.config.idleSessions}  uses ${String(record.uses).padStart(3)}  ${state}`
       })
     const head = `Pruning for ${key} (${repo.sessions} sessions, hides at ${this.config.idleSessions} idle)`
     const hidden = watch?.hidden.length ? `Hidden this session: ${watch.hidden.join(', ')}` : undefined

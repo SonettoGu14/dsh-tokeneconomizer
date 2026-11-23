@@ -66,6 +66,25 @@ describe('prune, end to end', () => {
     expect(harness.requests).toHaveLength(2)
   })
 
+  it('never hides the external compressor tools', async () => {
+    harness = await startHarness({
+      components: ['prune'],
+      tools: [tool('acp_retrieve'), tool('acp_status'), tool('acp_cache'), tool('idle_tool')],
+    })
+    seedIdle(harness, { acp_retrieve: 20, acp_status: 20, acp_cache: 20, idle_tool: 6 })
+
+    const agent = await harness.agent()
+    await harness.turn(agent)
+
+    // Hiding one of these leaves the model calling a tool the compressor's own
+    // prompt sections still advertise.
+    const names = harness.requests[0]!.toolNames
+    expect(names).toContain('acp_retrieve')
+    expect(names).toContain('acp_status')
+    expect(names).toContain('acp_cache')
+    expect(names).not.toContain('idle_tool')
+  })
+
   it('never hides a protected tool, whatever its idle count', async () => {
     harness = await startHarness({ components: ['prune'], tools: [tool('write'), tool('idle_tool')] })
     seedIdle(harness, { write: 20, idle_tool: 6 })
