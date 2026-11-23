@@ -165,9 +165,8 @@ Still open in P1: to show *which* facts were retired and why, the retirement
 reason has to be recorded (`recordInjection`/`contradict` keep the counts, not the
 cause). Collect that before quoting a reason in the report.
 
-Then run the experiment, which is the honest part. The protocol, the decision rules
-(written down before any data is collected) and the empty result tables live in
-[docs/MEASUREMENT.md](MEASUREMENT.md):
+Then run the experiment. The protocol, the decision rules (fixed before any data is
+collected) and the empty result tables live in [docs/MEASUREMENT.md](MEASUREMENT.md):
 
 - **fact effect**: a repository with enough history (say ≥ 20 sessions after
   enabling facts). Metric: median equivalents/session for the injected sessions

@@ -103,7 +103,7 @@ the provider's real price ratios.
 - `/te-cost trend` prints one line per day for this repository, with a bar, the
   median equivalent per session (subagent sessions excluded) and how many oldest
   sessions the 400-entry cap dropped. `/te-cost repos` lists every repository the
-  ledger knows, most expensive first — the state directory names its folders after
+  ledger knows, most expensive first; the state directory names its folders after
   a base64 key, which is not something a person can ask a trend for.
 
 Unknown models fall back to a default weight table, recorded as
@@ -146,7 +146,7 @@ stops being injected — and a later session that contradicts it retires it.
   has cost in total, and per fact a break-even (`injected eq ÷ eq per failure`,
   i.e. how many recurrences its text has to prevent to pay for itself) beside the
   observations that fact actually has. It reports absolute counts and says what it
-  cannot know — there is no baseline error rate, so no improvement percentage is
+  cannot know: there is no baseline error rate, so no improvement percentage is
   claimed.
 
 Ported constants: `K_PROMOTE=3`, `GAMMA=0.8`, `LAMBDA=5.0`, `FIRE_GATE=0.40`,
