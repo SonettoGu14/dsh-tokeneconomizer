@@ -117,8 +117,14 @@ at least four such sessions. When the model stops repeating the mistake, the fac
 stops being injected — and a later session that contradicts it retires it.
 
 - Injects through the logged pre-step channel: one extra user-role message at
-  the first step of a session, nothing at all when no fact qualifies, capped at
-  4 facts / 600 characters.
+  the first step of every turn, nothing at all when no fact qualifies, capped at
+  4 facts / 600 characters. It repeats per turn on purpose: a compressor that
+  folds older history on the wire (billion-context keeps only the last few
+  messages) can drop the earlier copy, and the turn boundary is the one place
+  where the facts are sure to survive it. Each turn adds one copy to the session
+  log — about a hundred tokens — so a long session keeps one notice per turn at
+  the tail; a compressor that folds the wire hides the older copies from the
+  model, which is why the block stays this small.
 - Stores the repair itself — the failing and working command forms of one intent,
   plus environment variable *names*. Never file contents, never output text.
 - Books what the injection cost and what it prevented: each fact records the

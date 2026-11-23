@@ -55,6 +55,28 @@ describe('facts, end to end', () => {
     expect(state?.facts[0]?.injectedTokens).toBeGreaterThan(0)
   })
 
+  it('re-injects on the next turn, where a compressor still shows the tail', async () => {
+    harness = await startHarness({ components: ['facts'] })
+    seedInjectableFact(harness)
+
+    const agent = await harness.agent()
+    await harness.turn(agent, 'run the tests')
+    await harness.turn(agent, 'run them again')
+
+    expect(harness.requests).toHaveLength(2)
+    const second = harness.requests[1]!.messages
+    // A wire-level compressor folds the first turn's copy out of the request
+    // while the session log keeps it; the second copy is what survives, and it
+    // has to sit after this turn's own prompt rather than behind the fold.
+    const injected = second.filter((message) => message.source === 'dsh-te-facts')
+    expect(injected).toHaveLength(2)
+    expect(injected[0]!.text).toBe(injected[1]!.text)
+    const prompt = second.findLastIndex((message) => message.text === 'run them again')
+    const last = second.findLastIndex((message) => message.source === 'dsh-te-facts')
+    expect(prompt).toBeGreaterThan(-1)
+    expect(last).toBeGreaterThan(prompt)
+  })
+
   it('injects nothing when the stored fact is not qualified', async () => {
     harness = await startHarness({ components: ['facts'] })
     seedInjectableFact(harness)

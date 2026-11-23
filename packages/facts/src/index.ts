@@ -9,7 +9,9 @@
  * a fact the model has already absorbed stops costing tokens.
  *
  * Injection rides the logged pre-step channel: one extra user-role message at
- * the first step of a session, and nothing at all when no fact qualifies.
+ * the first step of every turn, and nothing at all when no fact qualifies. The
+ * turn boundary is what keeps it visible: a compressor can fold the previous
+ * copy out of the request while this session still lists it.
  *
  * @module dsh-te-facts
  */
@@ -17,7 +19,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-commands'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 
 declare module '@deepseek-ai/dsh-llm' {
@@ -96,7 +98,8 @@ interface InjectedFact {
 interface SessionWatch {
   calls: ShellCall[]
   /**
-   * Facts injected into this session, or undefined before the decision.
+   * The facts of this session's most recent injection, or undefined before the
+   * first one.
    *
    * The share of the injected text is carried here rather than written to the
    * store at injection time: the ordinal is only known at settle, and a hot
@@ -209,6 +212,19 @@ function render(facts: readonly StoredFact[], maxChars: number): Rendered | unde
 }
 
 /**
+ * Whether a message is exactly the notice we would inject.
+ *
+ * Only the tail is checked: there a duplicate is provably still visible to the
+ * model, which is the one case where skipping it saves tokens instead of losing
+ * the facts to a fold further back.
+ */
+function lastNoticeIs(messages: readonly UserMessage[], text: string): boolean {
+  const last = messages[messages.length - 1]
+  if (last === undefined || last.source.kind !== 'dsh-te-facts') return false
+  return last.content.map((block) => (block.type === 'text' ? block.text : '')).join('') === text
+}
+
+/**
  * Per-repository fact store and per-session watcher.
  * Exposed on the context as `teFacts`.
  */
@@ -236,7 +252,7 @@ export class Facts extends Service {
       if (isSubagent(payload.agent.session)) return decision
       let message: ReturnType<typeof createUserMessage> | undefined
       try {
-        message = await this.injectedMessage(payload.agent, payload.turn, payload.step)
+        message = await this.injectedMessage(payload.agent, payload.step, decision.messages)
       } catch (error) {
         // Injection is an optimization: a damaged state file must never stop a
         // session from starting.
@@ -320,17 +336,26 @@ export class Facts extends Service {
       .slice(0, this.config.maxFacts)
   }
 
-  /** The user-role message to admit, or undefined to leave the step alone. */
-  private async injectedMessage(agent: Agent, turn: number, step: number): Promise<ReturnType<typeof createUserMessage> | undefined> {
-    if (turn !== 1 || step !== 1) return undefined
+  /**
+   * The user-role message to admit, or undefined to leave the step alone.
+   *
+   * The block is re-admitted at the first step of every turn. A compressor folds
+   * older history on the wire, so the copy this session still lists is usually
+   * not in the request the model is about to answer; re-admitting it at the turn
+   * boundary is what keeps the facts inside the protected tail.
+   */
+  private async injectedMessage(agent: Agent, step: number, messages: readonly UserMessage[]): Promise<ReturnType<typeof createUserMessage> | undefined> {
+    // One injection per step: the later steps of a turn already follow its notice.
+    if (step !== 1) return undefined
     const session = agent.session
-    const watch = this.watchOf(session)
-    if (watch.injected !== undefined) return undefined
-    watch.injected = []
     const repo = await this.repoOf(session)
-    const facts = this.worthInjecting(repo)
-    const rendered = render(facts, this.config.maxChars)
+    const rendered = render(this.worthInjecting(repo), this.config.maxChars)
     if (rendered === undefined) return undefined
+    // A notice that is already the last message has nothing after it, so it is
+    // still inside any compressor's tail window: repeating it would spend the
+    // same tokens twice for no new visibility.
+    if (lastNoticeIs(messages, rendered.text)) return undefined
+    const watch = this.watchOf(session)
     watch.injected = rendered.perFact
     this.bill(session, rendered)
     return createUserMessage({

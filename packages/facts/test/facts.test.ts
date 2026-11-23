@@ -80,15 +80,15 @@ async function storedFacts(): Promise<{
   return JSON.parse(await readFile(path, 'utf8')) as never
 }
 
-/** Run the pre-step waterfall and return the admitted messages. */
-async function preStep(ctx: Context, session: Session, turn: number, step: number) {
-  const base = { kind: 'enter' as const, messages: [] as unknown[] }
+/** Run the pre-step waterfall with an optional admitted batch, and return the result. */
+async function preStep(ctx: Context, session: Session, turn: number, step: number, history: unknown[] = []) {
+  const base = { kind: 'enter' as const, messages: [...history] }
   // The context's event map expects a real Agent; the component only reads
   // `agent.session`, so a loose view keeps the test honest without a driver.
   const dispatch = ctx as unknown as { waterfall: (...args: unknown[]) => Promise<unknown> }
   return (await dispatch.waterfall(
     'agent/pre-step',
-    { agent: { session }, turn, step, messages: [], signal: undefined, modelSelection: undefined },
+    { agent: { session }, turn, step, messages: history, signal: undefined, modelSelection: undefined },
     async () => base,
   )) as { kind: string; messages: { content: { type: string; text: string }[] }[] }
 }
@@ -201,12 +201,51 @@ describe('injection', () => {
     expect(decision.messages).toEqual([])
   })
 
-  it('does not repeat the block within one session', async () => {
+  it('injects nothing when the repository has no facts at all', async () => {
+    const ctx = await mount()
+    expect((await preStep(ctx, sessionOf('s1'), 1, 1)).messages).toEqual([])
+  })
+
+  it('re-injects at the first step of the next turn', async () => {
+    const ctx = await mount()
+    for (const id of ['s1', 's2', 's3', 's4']) await learnSession(ctx, id)
+    const session = sessionOf('s5')
+    const first = await preStep(ctx, session, 1, 1)
+    expect(first.messages).toHaveLength(1)
+    // The session log still lists the first notice, but a compressor folds older
+    // history out of the request; the turn boundary is what brings it back.
+    const second = await preStep(ctx, session, 2, 1)
+    expect(second.messages).toHaveLength(1)
+    expect(second.messages[0]?.content[0]?.text).toBe(first.messages[0]?.content[0]?.text)
+  })
+
+  it('does not inject again on a later step of the same turn', async () => {
     const ctx = await mount()
     for (const id of ['s1', 's2', 's3', 's4']) await learnSession(ctx, id)
     const session = sessionOf('s5')
     expect((await preStep(ctx, session, 1, 1)).messages).toHaveLength(1)
-    expect((await preStep(ctx, session, 2, 1)).messages).toEqual([])
+    expect((await preStep(ctx, session, 1, 2)).messages).toEqual([])
+    expect((await preStep(ctx, session, 1, 3)).messages).toEqual([])
+  })
+
+  it('skips a notice that is already the last message, and only then', async () => {
+    const ctx = await mount()
+    for (const id of ['s1', 's2', 's3', 's4']) await learnSession(ctx, id)
+    const session = sessionOf('s5')
+    const first = await preStep(ctx, session, 1, 1)
+    expect(first.messages).toHaveLength(1)
+
+    // Nothing came after the notice, so it is still the tail the model would
+    // see: a second copy would spend the same tokens for no new visibility.
+    const unchanged = await preStep(ctx, session, 1, 1, first.messages)
+    expect(unchanged.messages).toEqual(first.messages)
+
+    // Anything else at the tail means the notice moved out of it, so it goes again.
+    const moved = await preStep(ctx, session, 2, 1, [
+      { role: 'user', content: [{ type: 'text', text: 'and again' }], source: { kind: 'user' } },
+    ])
+    expect(moved.messages).toHaveLength(2)
+    expect(moved.messages[1]?.content[0]?.text).toContain('Facts learned from earlier sessions')
   })
 })
 
@@ -319,6 +358,14 @@ describe('injection accounting', () => {
     const [header, ...lines] = text.split('\n')
     const expected = Math.ceil((header ?? '').length / 4) + lines.reduce((sum, line) => sum + Math.ceil(line.length / 4), 0)
     expect(billed).toEqual([{ label: 'facts', tokens: expected }])
+
+    // A later turn injects again, and pays again: the ledger records the real
+    // cost of each injection rather than one per session.
+    await preStep(ctx, sessionOf('s5'), 2, 1)
+    expect(billed).toEqual([
+      { label: 'facts', tokens: expected },
+      { label: 'facts', tokens: expected },
+    ])
 
     await ctx.teFacts.settle(sessionOf('s5'))
     const fact = (await storedFacts()).facts[0]
