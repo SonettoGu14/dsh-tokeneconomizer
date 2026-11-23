@@ -89,6 +89,18 @@ interface RepoFacts {
 }
 
 /** One fact that was actually shown to the model, and what its line cost. */
+/** What `/te` needs to say about this component. */
+export interface FactsSummary {
+  /** Sessions that ended in this repository. */
+  sessions: number
+  total: number
+  active: number
+  candidate: number
+  retired: number
+  injectedTasks: number
+  injectedTokens: number
+}
+
 interface InjectedFact {
   readonly key: string
   readonly tokens: number
@@ -346,6 +358,25 @@ export class Facts extends Service {
       )
     }
     return lines.join('\n')
+  }
+
+  /**
+   * Counts for the bundle's `/te` overview.
+   *
+   * The full table stays in `/te-facts`; this is the summary a reader needs to
+   * know the component is alive and what it has learned.
+   */
+  async snapshot(session: Session): Promise<FactsSummary> {
+    const repo = await this.repoOf(session)
+    const byState = { active: 0, candidate: 0, retired: 0 }
+    let injectedTasks = 0
+    let injectedTokens = 0
+    for (const fact of repo.facts) {
+      byState[fact.state] += 1
+      injectedTasks += fact.injectedTasks.length
+      injectedTokens += fact.injectedTokens
+    }
+    return { sessions: repo.tasks, total: repo.facts.length, ...byState, injectedTasks, injectedTokens }
   }
 
   /** Record one shell call. */

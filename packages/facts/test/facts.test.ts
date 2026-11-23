@@ -486,6 +486,22 @@ describe('stats view', () => {
     expect(result.text).toContain('no baseline error')
   })
 
+  it('summarizes counts for the bundle overview', async () => {
+    await seed([stored()])
+    const { ctx } = await mountCapturing()
+    const summary = await ctx.teFacts.snapshot(sessionOf('s-snap'))
+
+    expect(summary).toEqual({
+      sessions: 12,
+      total: 1,
+      active: 1,
+      candidate: 0,
+      retired: 0,
+      injectedTasks: 4,
+      injectedTokens: 760,
+    })
+  })
+
   it('falls back to the list view when the repository has nothing', async () => {
     const { registered } = await mountCapturing()
     const result = (await registered[0]?.handler({ agent: { session: sessionOf('s-empty') }, rawInput: 'stats' })) as { text: string }

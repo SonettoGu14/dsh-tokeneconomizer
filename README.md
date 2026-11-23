@@ -79,6 +79,9 @@ optional lookup — lose the ledger and facts still work.
 
 ## The components
 
+The bundle also registers `/te`: one command that reports whether each component
+is mounted, what it has measured, and which row to switch off to drop it.
+
 ### `dsh-te-cost` — cache-weighted accounting
 
 Raw token totals mislead, because most input tokens are cache reads billed at a

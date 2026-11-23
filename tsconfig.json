@@ -12,6 +12,9 @@
     },
     {
       "path": "./packages/prune"
+    },
+    {
+      "path": "./packages/bundle"
     }
   ]
 }

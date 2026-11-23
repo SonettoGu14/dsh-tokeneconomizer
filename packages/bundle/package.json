@@ -1,7 +1,7 @@
 {
   "name": "dsh-te",
   "version": "0.3.0",
-  "description": "Bundle that installs the cost, facts and prune components together. · 一次装齐成本记账、仓库事实与工具隐藏三个组件。",
+  "description": "Installs the cost, facts and prune components and adds a /te overview. · 一次装齐成本记账、仓库事实与工具隐藏三个组件，并提供 /te 总览。",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -21,10 +21,16 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    },
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
+    "lib",
+    "src",
     "cordis.patch.yml"
   ],
   "repository": {
@@ -59,5 +65,7 @@
   "homepage": "https://github.com/SonettoGu14/dsh-tokeneconomizer/tree/master/packages/bundle#readme",
   "bugs": {
     "url": "https://github.com/SonettoGu14/dsh-tokeneconomizer/issues"
-  }
+  },
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts"
 }

@@ -1,10 +1,14 @@
-# dsh-te: the install-all bundle. Installing this package pulls the three
-# components and inserts their rows; set `enabled: false` on a row's config to
-# keep the component dormant without uninstalling it.
+# dsh-te: the install-all bundle.
 #
-# Install: dsh plugin --profile <name> add link:<repo>/packages/bundle
+# Installing this package pulls the three components and adds the `/te` overview.
+# Set `enabled: false` on a component's config, or `disabled: true` on its row,
+# to keep it installed but dormant.
+#
+# Install: dsh plugin --profile <name> add dsh-te
 # Then add "dsh-te" to dsh.profile.bundles in that profile's package.json.
 - insert:
+    - id: te-overview
+      name: 'dsh-te'
     - id: te-cost
       name: 'dsh-te-cost'
       config:

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -289,6 +289,41 @@ describe('restore permanence', () => {
     // Every candidate was restored, and four more idle sessions would qualify
     // them again: an empty deny list here is what "restored forever" means.
     expect(restricted).toEqual([])
+  })
+})
+
+describe('bundle snapshot', () => {
+  it('summarizes tracked tools and candidates from the recorded counters', async () => {
+    const ctx = await mount({ idleSessions: 5 })
+    const session = sessionOf('s-snap')
+    const key = resolveRepoKey(repo).key
+    const dir = join(stateRoot(), 'repos', repoKeyDirName(key))
+    await mkdir(dir, { recursive: true })
+    await writeFile(
+      join(dir, 'prune.json'),
+      JSON.stringify({
+        version: 1,
+        key,
+        sessions: 12,
+        tools: {
+          web_search: { idle: 7, lastUsed: 2, uses: 1 },
+          web_fetch: { idle: 6, lastUsed: 4, uses: 3 },
+          read: { idle: 0, lastUsed: 9, uses: 40 },
+        },
+        restored: [],
+      }),
+    )
+
+    const summary = await ctx.tePrune.snapshot(session)
+
+    // `read` is tracked but protected, so it is counted and never a candidate.
+    expect(summary).toEqual({
+      sessions: 12,
+      tracked: 3,
+      candidates: ['web_search', 'web_fetch'],
+      hiddenNow: 0,
+      idleSessions: 5,
+    })
   })
 })
 

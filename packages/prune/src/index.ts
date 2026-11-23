@@ -101,6 +101,16 @@ interface ToolRecord {
 }
 
 /** Per-repository pruning state. */
+/** What `/te` needs to say about this component. */
+export interface PruneSummary {
+  sessions: number
+  tracked: number
+  /** Idle long enough to hide, by recorded counters alone. */
+  candidates: string[]
+  hiddenNow: number
+  idleSessions: number
+}
+
 interface RepoPrune {
   version: 1
   key: string
@@ -342,6 +352,32 @@ export class Prune extends Service {
     return hidden.length === 0
       ? `Nothing pruned in ${key}.`
       : `Restored ${hidden.join(', ')} — they will never be hidden again.`
+  }
+
+  /**
+   * Counts for the bundle's `/te` overview.
+   *
+   * Candidates are computed from the recorded idle counters alone; whether a
+   * tool is actually in the registry is checked at session start, so this can
+   * name a tool the next session will not hide (for example one that was
+   * uninstalled since it was last counted).
+   */
+  async snapshot(session: Session): Promise<PruneSummary> {
+    const repo = await this.repoOf(session)
+    const keep = this.protectedNames()
+    const restored = new Set(repo.restored)
+    const candidates = Object.entries(repo.tools)
+      .filter(([tool, record]) => !keep.has(tool) && !restored.has(tool) && record.idle >= this.config.idleSessions)
+      .sort((left, right) => right[1].idle - left[1].idle)
+      .slice(0, this.config.maxHidden)
+      .map(([tool]) => tool)
+    return {
+      sessions: repo.sessions,
+      tracked: Object.keys(repo.tools).length,
+      candidates,
+      hiddenNow: this.watching.get(session.id)?.hidden.length ?? 0,
+      idleSessions: this.config.idleSessions,
+    }
   }
 
   /** Human-readable listing for `/te-prune`. */

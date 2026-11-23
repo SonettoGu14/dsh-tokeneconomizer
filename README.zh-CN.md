@@ -65,6 +65,8 @@ tag 就是发布。`.github/workflows/publish.yml` 会重跑 `pnpm verify`，拒
 
 ## 三个组件
 
+整包还会注册 `/te`：一条命令报出三个组件是否在运行、各自测到了什么，以及要关掉某个组件该动哪一行。
+
 ### `dsh-te-cost` — 缓存加权记账
 
 原始 token 总数会骗人，因为大部分输入 token 其实是缓存读，按全新输入 token 的
