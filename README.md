@@ -1,5 +1,7 @@
 # dsh-tokeneconomizer
 
+**English** · [简体中文](README.zh-CN.md)
+
 Three small DeepSeek Harness components that make an agent spend fewer tokens on
 the same work. They are native Cordis plugins, not a port of a script: each one
 plugs into the harness's own typed events, so there is no shell wrapper, no
@@ -211,8 +213,8 @@ after it closes, not during it.
 ```sh
 pnpm build             # tsc -b over the four source packages
 pnpm typecheck         # tsc -p tsconfig.test.json, includes all tests
-pnpm test              # vitest: 146 unit tests
-pnpm test:integration  # vitest: 9 integration tests against real DSH packages
+pnpm test              # vitest: 160 unit tests
+pnpm test:integration  # vitest: 11 integration tests against real DSH packages
 pnpm verify            # all four, in that order
 ```
 
@@ -236,12 +238,15 @@ no credentials, no model. What they assert is exactly what the components claim:
   reports that history through the real command service.
 - **facts** — a qualified fact is present as a `dsh-te-facts` message in the
   *first model request* (not merely in state), and disappears when the fire gate
-  is not met; a real failing `python -m pytest` followed by a working `pytest`
-  in the same session teaches the fact end to end; and the session that received
-  the injection records it against the task it happened in.
+  is not met; the second turn's request still carries it, which is the regression
+  guard for a wire-level compressor folding the earlier copy away; a real failing
+  `python -m pytest` followed by a working `pytest` in the same session teaches
+  the fact end to end; and the session that received the injection records it
+  against the task it happened in.
 - **prune** — an idle tool is absent from the request's `toolNames` while the
   registry still knows it (hidden, not unregistered); a tool below the threshold
-  survives; `write` is never hidden.
+  survives; `write` is never hidden; and an idle `acp_*` tool from a context
+  compressor is never hidden either.
 
 These tests caught a real composition requirement: DSH 0.2.2 refuses to run an
 agent unless a tool executor is mounted, which a bare event-level test never

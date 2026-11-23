@@ -165,7 +165,9 @@ Still open in P1: to show *which* facts were retired and why, the retirement
 reason has to be recorded (`recordInjection`/`contradict` keep the counts, not the
 cause). Collect that before quoting a reason in the report.
 
-Then run the experiment, which is the honest part:
+Then run the experiment, which is the honest part. The protocol, the decision rules
+(written down before any data is collected) and the empty result tables live in
+[docs/MEASUREMENT.md](MEASUREMENT.md):
 
 - **fact effect**: a repository with enough history (say ≥ 20 sessions after
   enabling facts). Metric: median equivalents/session for the injected sessions
@@ -300,9 +302,9 @@ chosen to stay simple, and each says so in its docstring.
 3. **Measurement or breadth next?** This plan says measurement (P1) before more
    mechanism (P3). If the goal is the opposite — more hooks before proof — say so
    and reorder.
-4. **Language.** Everything is English today; the closest prior art ships a
-   Chinese README as well. A `README.zh-CN.md` is cheap and, for this audience,
-   probably worth it.
+4. ~~Language.~~ **Decided: both.** `README.zh-CN.md` mirrors the English README
+   (the audience is largely Chinese-speaking), and the English one links to it. Keep
+   the two in step when behaviour changes.
 5. **Loop guard**: is the DSH reminder genuinely enough, or is a smaller
    "redirect once" worth building on top of it?
 
