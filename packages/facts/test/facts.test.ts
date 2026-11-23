@@ -426,3 +426,69 @@ describe('reporting', () => {
     expect(ctx.teFacts.report(sessionOf('s1'))).toContain('No facts learned yet')
   })
 })
+
+describe('stats view', () => {
+  /** Mount with a capturing command stub, so the handler itself can be called. */
+  async function mountCapturing() {
+    const ctx = new Context()
+    const registered: { handler: (invocation: unknown) => unknown }[] = []
+    ctx.provide('commands', {
+      register: (definition: (typeof registered)[number]) => {
+        registered.push(definition)
+        return () => {}
+      },
+    } as never)
+    apply(ctx, { enabled: true, maxFacts: 4, maxChars: 600 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    return { ctx, registered }
+  }
+
+  /** One stored fact, shaped the way the plugin writes it. */
+  function stored(overrides: Record<string, unknown> = {}) {
+    return {
+      key: 'form-repair:pytest:python -m pytest',
+      family: 'form-repair',
+      intent: 'pytest',
+      text: 'python -m pytest fails here; pytest works.',
+      state: 'active',
+      confirms: [3, 5, 6],
+      contradicts: [],
+      fired: 6,
+      firedWaste: 1,
+      injectedTasks: [4, 5, 6, 7],
+      exercisedTasks: [4, 6, 7],
+      wastedTasks: [5],
+      injectedTokens: 760,
+      wasteTokens: 190,
+      ...overrides,
+    }
+  }
+
+  async function seed(facts: unknown[]): Promise<void> {
+    const key = resolveRepoKey(repo).key
+    const dir = join(stateRoot(), 'repos', repoKeyDirName(key))
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'facts.json'), JSON.stringify({ version: 2, key, tasks: 12, facts }))
+  }
+
+  it('counts by state and prices the break-even next to the observations', async () => {
+    await seed([stored(), stored({ key: 'env-value:PGPORT:5433', text: 'PGPORT is 5433 here.', state: 'candidate', fired: 1, firedWaste: 0, injectedTasks: [7], exercisedTasks: [7], wastedTasks: [], injectedTokens: 190, wasteTokens: 0 })])
+    const { registered } = await mountCapturing()
+    const result = (await registered[0]?.handler({ agent: { session: sessionOf('s-stats') }, rawInput: 'stats' })) as { text: string }
+
+    expect(result.text).toContain('active 1 · candidate 1 · retired 0')
+    expect(result.text).toContain('injected 5 tasks, 950 eq')
+    // 760 eq spent ÷ 190 eq per failure = it has to prevent 4 recurrences.
+    expect(result.text).toContain('break-even 4.0 failures')
+    expect(result.text).toContain('since first injection: 3 exercised, 1 recurred')
+    // A fact with no priced failure cannot have a break-even, and saying 0 would lie.
+    expect(result.text).toContain('break-even unknown (no failure priced yet)')
+    expect(result.text).toContain('no baseline error')
+  })
+
+  it('falls back to the list view when the repository has nothing', async () => {
+    const { registered } = await mountCapturing()
+    const result = (await registered[0]?.handler({ agent: { session: sessionOf('s-empty') }, rawInput: 'stats' })) as { text: string }
+    expect(result.text).toContain('No facts learned yet')
+  })
+})

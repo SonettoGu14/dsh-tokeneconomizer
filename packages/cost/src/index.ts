@@ -28,10 +28,12 @@ import {
   addBuckets,
   bucketsTotal,
   capHistory,
+  dailyTrend,
   foldUsage,
   isSessionHistoryEntry,
   localDay,
   formatTokens,
+  median,
   readJson,
   repoKeyDirName,
   resolveRepoKey,
@@ -46,6 +48,7 @@ import {
   type TokenBuckets,
   type TokenWeights,
 } from 'dsh-te-core'
+import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /** Cordis plugin name; it must match the `cordis.patch.yml` row id/name pair. */
@@ -234,13 +237,18 @@ export class CostLedger extends Service {
     ctx.effect(() =>
       ctx.commands.register({
         name: 'te-cost',
-        description: 'Show cache-weighted equivalent-token spend for this session and repo',
-        input: { hint: 'session | repo' },
+        description: 'Show cache-weighted equivalent-token spend for this session, repo, trend or repo list',
+        input: { hint: 'session | repo | trend | repos' },
         handler: async (invocation) => {
           const session = invocation.agent.session
           // A resumed session has an empty in-memory cache; load the record so
           // `/te-cost repo` answers from disk instead of claiming there is none.
           await this.repoSnapshot(session)
+          // The repository list is a scan of the state directory, not a view of
+          // this session's repo, so it has no record to load first.
+          if (invocation.rawInput.trim().toLowerCase() === 'repos') {
+            return { kind: 'success', text: await this.reposReport() }
+          }
           return { kind: 'success', text: this.report(session, invocation.rawInput) }
         },
       }),
@@ -326,6 +334,7 @@ export class CostLedger extends Service {
   report(session: Session, rawInput: string): string {
     const scope = rawInput.trim().toLowerCase()
     const wantRepo = scope === 'repo'
+    const wantTrend = scope === 'trend'
     const wantSession = scope === '' || scope === 'session'
     const state = this.stateOf(session)
     const repo = this.repoOf(session)
@@ -369,7 +378,79 @@ export class CostLedger extends Service {
       }
     }
 
+    if (wantTrend) {
+      if (repo === undefined) {
+        lines.push('repo unknown (session has no working directory yet)')
+      } else {
+        const record = this.repoCache.get(repo.key)
+        if (record === undefined) {
+          lines.push(`repo ${repo.key}`)
+          lines.push('  no persisted totals yet (written when this session ends)')
+        } else {
+          lines.push(`repo ${record.key}`)
+          const days = dailyTrend(record.history)
+          if (days.length === 0) {
+            lines.push('  trend none yet (per-session detail is recorded from v0.2.0)')
+          } else {
+            const shown = days.slice(-TREND_DAYS)
+            const peak = Math.max(...shown.map((entry) => entry.equivalent), 1)
+            lines.push(
+              `  ${record.sessions} sessions over ${days.length} day${days.length === 1 ? '' : 's'}${record.droppedSessions > 0 ? ` · ${record.droppedSessions} oldest dropped` : ''}`,
+            )
+            for (const entry of shown) {
+              lines.push(
+                `  ${entry.day}  ${String(entry.sessions).padStart(3)} sess  ${formatTokens(entry.equivalent).padStart(7)} eq  ${bar(entry.equivalent, peak)}`,
+              )
+            }
+            if (shown.length < days.length) lines.push(`  (last ${shown.length} of ${days.length} days)`)
+            const own = record.history.filter((entry) => entry.subagent !== true)
+            const perSession = own.map((entry) => entry.equivalent)
+            lines.push(
+              `  median ${formatTokens(median(perSession))} eq per session · latest ${formatTokens(perSession[perSession.length - 1] ?? 0)} eq`,
+            )
+            const delegated = record.history.length - own.length
+            if (delegated > 0) {
+              lines.push(`  ${delegated} subagent sessions excluded from the per-session median`)
+            }
+          }
+        }
+      }
+    }
+
     return lines.join('\n').trimEnd()
+  }
+
+  /**
+   * List the repositories the ledger knows, most expensive first.
+   *
+   * This is the entry point a trend needs: the state directory names its
+   * folders after a base64 key, which is not something a person can ask for.
+   */
+  private async reposReport(): Promise<string> {
+    const root = join(stateRoot(), 'repos')
+    let dirs: string[]
+    try {
+      dirs = await readdir(root)
+    } catch {
+      return 'No repositories recorded yet.'
+    }
+    const rows: { key: string; sessions: number; equivalent: number }[] = []
+    for (const dir of dirs) {
+      const stored = await readJson<StoredCostRecord>(join(root, dir, 'cost.json'))
+      if (stored === undefined) continue
+      const record = normalizeRecord(stored)
+      rows.push({ key: record.key, sessions: record.sessions, equivalent: record.equivalent })
+    }
+    if (rows.length === 0) return 'No repositories recorded yet.'
+    rows.sort((left, right) => right.equivalent - left.equivalent)
+    const total = rows.reduce((sum, row) => sum + row.equivalent, 0)
+    const lines = [`${rows.length} repositories · ${formatTokens(total)} eq total`, '']
+    for (const row of rows) {
+      lines.push(
+        `  ${formatTokens(row.equivalent).padStart(7)} eq  ${String(row.sessions).padStart(3)} sess  ${row.key}`,
+      )
+    }
+    return lines.join('\n')
   }
 
   private stateOf(session: Session): SessionCost {
@@ -488,6 +569,15 @@ function readRoute(event: SessionEvent): { provider?: string; model?: string } |
   if (fromHeader?.provider !== undefined) return { provider: fromHeader.provider, model: fromHeader.model }
   if (data.provider !== undefined) return { provider: data.provider, model: data.model }
   return undefined
+}
+
+/** How many days the trend prints before it starts summarizing. */
+const TREND_DAYS = 30
+
+/** A proportional bar for one day, relative to the busiest day shown. */
+function bar(value: number, peak: number, width = 24): string {
+  const filled = Math.round((value / peak) * width)
+  return '█'.repeat(Math.max(0, Math.min(width, filled)))
 }
 
 function overheadTotal(overhead: Record<string, number>): number {

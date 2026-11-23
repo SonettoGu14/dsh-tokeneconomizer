@@ -149,17 +149,21 @@ absolute counts and a break-even (n* = injected tokens ÷ waste per failure) and
 say what it cannot know. An `earning` verdict with `k = 0` observations is not
 proof of anything.
 
-Build the report next (cheap, no new behaviour):
+The reports are **built** (they read the v2 records and change no behaviour):
 
-- `/te-facts stats` (or a `--json` flag): per repository, facts by state, firing
-  rate, how many sessions injected, which facts were retired and why, and per
-  fact the break-even next to the observations it actually has.
-- `/te-cost trend`: equivalents per session over time for one repository, with
-  the session count, so a before/after comparison is possible at all.
-- `/te-cost repos`: the repositories the ledger knows, so a trend can be asked
-  for without listing the state directory first.
+- `/te-facts stats` — facts by state, total injected tasks and equivalent tokens,
+  and per fact the break-even (`injected eq ÷ eq per failure`) next to the
+  observations it actually has. It reports absolute counts and states that the
+  ledger has no baseline error rate, so no improvement percentage is claimed.
+- `/te-cost trend` — one line per calendar day for the current repository, with a
+  bar, the median equivalent per session (subagent sessions excluded from the
+  median but not from the totals) and how many sessions the 400-entry cap dropped.
+- `/te-cost repos` — every repository the ledger knows, most expensive first, so a
+  trend can be asked for without reading the state directory.
 
-All three read the v2 records above; none of them may change behaviour.
+Still open in P1: to show *which* facts were retired and why, the retirement
+reason has to be recorded (`recordInjection`/`contradict` keep the counts, not the
+cause). Collect that before quoting a reason in the report.
 
 Then run the experiment, which is the honest part:
 

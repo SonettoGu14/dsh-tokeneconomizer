@@ -207,6 +207,53 @@ export function capHistory(
   return { entries: dropped === 0 ? [...history] : history.slice(dropped), dropped }
 }
 
+/** One calendar day of a repository's session history. */
+export interface TrendDay {
+  /** `YYYY-MM-DD`, local. */
+  readonly day: string
+  readonly sessions: number
+  readonly equivalent: number
+}
+
+/**
+ * Group session history into calendar days, oldest first.
+ *
+ * The ledger stores one entry per session; a trend needs one line per day,
+ * because a day is the unit a person compares ("before I enabled this").
+ *
+ * @param history - entries, oldest first (any order is accepted).
+ * @returns one bucket per day that has at least one entry.
+ */
+export function dailyTrend(history: readonly SessionHistoryEntry[]): TrendDay[] {
+  const byDay = new Map<string, { sessions: number; equivalent: number }>()
+  for (const entry of history) {
+    if (entry.day === '') continue
+    const bucket = byDay.get(entry.day) ?? { sessions: 0, equivalent: 0 }
+    bucket.sessions += 1
+    bucket.equivalent += entry.equivalent
+    byDay.set(entry.day, bucket)
+  }
+  return [...byDay.entries()]
+    .map(([day, bucket]) => ({ day, sessions: bucket.sessions, equivalent: bucket.equivalent }))
+    .sort((left, right) => left.day.localeCompare(right.day))
+}
+
+/**
+ * The middle value, or the mean of the two middle values.
+ *
+ * The trend report quotes a median per session because one runaway session
+ * would drag a mean and make a before/after comparison say the opposite of what
+ * happened.
+ *
+ * @param values - the sample; an empty array yields 0.
+ */
+export function median(values: readonly number[]): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((left, right) => left - right)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0 ? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2 : (sorted[middle] ?? 0)
+}
+
 /** Whether a stored entry is still shaped the way this version writes it. */
 export function isSessionHistoryEntry(value: unknown): value is SessionHistoryEntry {
   if (value === null || typeof value !== 'object') return false

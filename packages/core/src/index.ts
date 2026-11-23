@@ -31,15 +31,17 @@ export {
   addBuckets,
   bucketsTotal,
   capHistory,
+  dailyTrend,
   equivalentTokens,
   isSessionHistoryEntry,
   localDay,
+  median,
   sampleBuckets,
   sampleEquivalent,
   foldUsage,
   upsertHistory,
 } from './cost.ts'
-export type { CostAccumulator, SessionHistoryEntry, TokenBuckets, UsageSample } from './cost.ts'
+export type { CostAccumulator, SessionHistoryEntry, TokenBuckets, TrendDay, UsageSample } from './cost.ts'
 
 export { gitOriginRemote, gitTopLevel, normalizeRemoteUrl, repoKeyDirName, resolveRepoKey } from './repo-key.ts'
 export type { RemoteReader, RepoIdentity, RepoKeySource, TopLevelReader } from './repo-key.ts'

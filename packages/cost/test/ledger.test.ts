@@ -4,7 +4,7 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { repoKeyDirName, stateRoot } from 'dsh-te-core'
+import { repoKeyDirName, resolveRepoKey, stateRoot } from 'dsh-te-core'
 import { CostLedger, apply } from '../src/index.ts'
 
 /** Mount the plugin and let Cordis finish loading its fiber. */
@@ -240,5 +240,88 @@ describe('session lifecycle and the command', () => {
     expect(snapshot.buckets.cacheWrite).toBe(100)
     // flash writes cache at 1x fresh input
     expect(snapshot.equivalent).toBeCloseTo(100, 6)
+  })
+})
+
+/** Write a v2 cost record for one repository key. */
+async function writeRecord(key: string, record: Record<string, unknown>): Promise<void> {
+  const dir = join(stateRoot(), 'repos', repoKeyDirName(key))
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, 'cost.json'), JSON.stringify({ version: 2, key, ...record }))
+}
+
+const ZERO = { uncachedInput: 0, cacheRead: 0, cacheWrite: 0, output: 0 }
+
+describe('trend report', () => {
+  it('groups history by day, quotes a subagent-free median and shows the cap', async () => {
+    await mount(ctx, { enabled: true, persist: true })
+    const session = fakeSession('sess-trend', '/tmp/repo-trend')
+    const key = resolveRepoKey('/tmp/repo-trend').key
+    const base = {
+      startedAt: '2026-11-18T09:00:00.000Z',
+      endedAt: '2026-11-18T10:00:00.000Z',
+      buckets: ZERO,
+      overhead: {},
+      weightsSource: 'known',
+    }
+    await writeRecord(key, {
+      equivalent: 202_000,
+      buckets: ZERO,
+      sessions: 3,
+      overhead: {},
+      updatedAt: base.endedAt,
+      history: [
+        { ...base, sessionId: 'a', day: '2026-11-18', equivalent: 100_000 },
+        { ...base, sessionId: 'b', day: '2026-11-18', equivalent: 60_000 },
+        { ...base, sessionId: 'c', day: '2026-11-19', equivalent: 42_000, subagent: true },
+      ],
+      droppedSessions: 2,
+    })
+
+    await ctx.teCost.repoSnapshot(session)
+    const text = ctx.teCost.report(session, 'trend')
+
+    expect(text).toContain('3 sessions over 2 days · 2 oldest dropped')
+    expect(text).toContain('2026-11-18')
+    // The subagent session is counted in the totals but not in the median.
+    expect(text).toContain('median 80.0k eq per session')
+    expect(text).toContain('1 subagent sessions excluded from the per-session median')
+  })
+
+  it('says so when a repository has no history yet', async () => {
+    await mount(ctx, { enabled: true, persist: true })
+    const session = fakeSession('sess-empty', '/tmp/repo-empty')
+    const key = resolveRepoKey('/tmp/repo-empty').key
+    await writeRecord(key, { equivalent: 0, buckets: ZERO, sessions: 0, overhead: {}, updatedAt: '', history: [], droppedSessions: 0 })
+    await ctx.teCost.repoSnapshot(session)
+    expect(ctx.teCost.report(session, 'trend')).toContain('trend none yet')
+  })
+})
+
+describe('repos report', () => {
+  it('lists every repository, most expensive first', async () => {
+    await mount(ctx, { enabled: true, persist: true })
+    const cheap = resolveRepoKey('/tmp/repo-cheap').key
+    const dear = resolveRepoKey('/tmp/repo-dear').key
+    await writeRecord(cheap, { equivalent: 1_000, buckets: ZERO, sessions: 1, overhead: {}, updatedAt: '', history: [], droppedSessions: 0 })
+    await writeRecord(dear, { equivalent: 90_000, buckets: ZERO, sessions: 4, overhead: {}, updatedAt: '', history: [], droppedSessions: 0 })
+
+    const result = (await registrations[0]?.handler({
+      agent: { session: fakeSession('sess-repos', '/tmp/repo-dear') },
+      rawInput: 'repos',
+    })) as { text: string }
+
+    expect(result.text).toContain('2 repositories')
+    expect(result.text.indexOf(dear)).toBeLessThan(result.text.indexOf(cheap))
+    expect(result.text).toContain('91.0k eq total')
+  })
+
+  it('answers without inventing a repository', async () => {
+    await mount(ctx, { enabled: true, persist: true })
+    const result = (await registrations[0]?.handler({
+      agent: { session: fakeSession('sess-none', '/tmp/repo-dear') },
+      rawInput: 'repos',
+    })) as { text: string }
+    expect(result.text).toBe('No repositories recorded yet.')
   })
 })

@@ -283,10 +283,69 @@ export class Facts extends Service {
     this.ctx.effect(() =>
       this.ctx.commands.register({
         name: 'te-facts',
-        description: 'List repository facts learned by dsh-te-facts',
-        handler: (invocation) => ({ kind: 'success', text: this.report(invocation.agent.session) }),
+        description: 'List repository facts learned by dsh-te-facts, or their statistics',
+        input: { hint: 'stats' },
+        handler: async (invocation) => {
+          const session = invocation.agent.session
+          // A resumed session has an empty cache; load it so the report answers
+          // with what was learned instead of claiming nothing was.
+          await this.repoOf(session)
+          const scope = invocation.rawInput.trim().toLowerCase()
+          return { kind: 'success', text: scope === 'stats' ? this.stats(session) : this.report(session) }
+        },
       }),
     )
+  }
+
+  /**
+   * Render `/te-facts stats`.
+   *
+   * The list view answers "what do I know"; this one answers "is any of it
+   * earning its keep". It reports absolute counts and a break-even rather than
+   * an improvement rate: the ledger has no baseline error rate to compare
+   * against, and inventing one would turn "unknown" into a false claim.
+   */
+  stats(session: Session): string {
+    const key = resolveRepoKey(session.header?.cwd ?? process.cwd()).key
+    const repo = this.repos.get(key)
+    if (repo === undefined || repo.facts.length === 0) return `No facts learned yet for ${key}.`
+    const ordinal = repo.tasks
+    const byState = { active: 0, candidate: 0, retired: 0 }
+    let injectedTasks = 0
+    let injectedTokens = 0
+    let wasted = 0
+    let wasteTokens = 0
+    for (const fact of repo.facts) {
+      byState[fact.state] += 1
+      injectedTasks += fact.injectedTasks.length
+      injectedTokens += fact.injectedTokens
+      wasted += fact.wastedTasks.length
+      wasteTokens += fact.wasteTokens
+    }
+    const lines = [
+      `Facts for ${key} — ${repo.tasks} sessions · active ${byState.active} · candidate ${byState.candidate} · retired ${byState.retired}`,
+      `  injected ${injectedTasks} tasks, ${formatTokens(injectedTokens)} eq · waste observed ${wasted} failures, ${formatTokens(wasteTokens)} eq`,
+      '  break-even is the recurrences an injected fact has to prevent to pay for its own text;',
+      '  it is shown next to the observations that fact actually has. There is no baseline error',
+      '  rate in the ledger, so these are absolute counts — not a measured improvement.',
+    ]
+    const ranked = repo.facts.slice().sort((left, right) => score(right, ordinal) - score(left, ordinal))
+    for (const fact of ranked) {
+      const split = injectionSplit(fact)
+      const perFailure = fact.wastedTasks.length === 0 ? undefined : fact.wasteTokens / fact.wastedTasks.length
+      const breakEven =
+        perFailure === undefined || perFailure === 0
+          ? 'break-even unknown (no failure priced yet)'
+          : `break-even ${(fact.injectedTokens / perFailure).toFixed(1)} failures`
+      lines.push(`${fact.state.padEnd(9)} score ${score(fact, ordinal).toFixed(2).padStart(5)}  ${fact.text}`)
+      lines.push(
+        `          fired ${fact.firedWaste}/${fact.fired} · exercised ${fact.exercisedTasks.length} · injected ${split.injectedTasks}/${formatTokens(fact.injectedTokens)}eq · wasted ${fact.wastedTasks.length}/${formatTokens(fact.wasteTokens)}eq · ${breakEven}`,
+      )
+      lines.push(
+        `          since first injection: ${split.after.tasks} exercised, ${split.after.waste} recurred`,
+      )
+    }
+    return lines.join('\n')
   }
 
   /** Record one shell call. */
