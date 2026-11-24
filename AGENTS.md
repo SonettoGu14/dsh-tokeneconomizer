@@ -14,7 +14,7 @@ Three independent plugins for DeepSeek Harness, plus a shared library:
 | `dsh-te-core` | pure functions: pricing weights, token buckets, fact lifecycle, shell parsing, repository keys, atomic storage | — (library) |
 | `dsh-te-cost` | folds `session/event` usage into cache-weighted equivalent tokens; `/te-cost` | on |
 | `dsh-te-facts` | learns command-form and env-var repairs per repository and injects the live ones; `/te-facts` | on |
-| `dsh-te-prune` | hides tools that stayed idle for N sessions; `/te-prune` | **off** |
+| `dsh-te-prune` | hides tools that stayed idle for N sessions; `/te-prune`, with `dry-run` | **off** (measures only) |
 | `dsh-te` | installs all three and adds `/te`, a one-command status overview | — |
 
 The mechanisms come from [microsoft/TokenEconomizer](https://github.com/microsoft/TokenEconomizer)
@@ -110,11 +110,13 @@ still pass.
 3. **`facts` stays small and fail-open.** At most one injected message, ≤4 facts,
    ≤600 characters, and only when facts actually exist. A malformed
    `facts.json` entry is dropped, never thrown.
-4. **`prune` decides once, early, and reversibly.** The mask is chosen at
-   `agent/created` (before the first prompt is assembled), applied through
-   `agent.ctx.get('tools')`, and disposed when the session ends. `restore` must
-   dispose the live mask. Compression, skill and image tools are always
-   protected — hiding them would make long sessions more expensive.
+4. **`prune` decides once, early, and reversibly.** The component is mounted even
+   when `enabled` is false, where it only records counters; `enabled` decides
+   whether the mask is applied. The mask is chosen at `agent/created` (before the
+   first prompt is assembled), applied through `agent.ctx.get('tools')`, and
+   disposed when the session ends. `restore` must dispose the live mask.
+   Compression, skill and image tools are always protected — hiding them would
+   make long sessions more expensive.
 5. **Tool-surface changes invalidate the cached prompt prefix.** Any change to
    visible tool schemas or their order makes the next request re-read the whole
    prompt from the first changed token. That is why `prune` ships disabled and

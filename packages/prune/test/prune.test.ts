@@ -28,6 +28,7 @@ let repo: string
 let savedHome: string | undefined
 let restricted: { deny?: readonly string[] }[]
 let lifted: number
+let commandHandler: ((invocation: unknown) => Promise<{ text: string }>) | undefined
 let toolsStub: unknown
 
 beforeEach(async () => {
@@ -63,7 +64,12 @@ function agentOf(target: Session, tools: unknown): { session: Session; ctx: { ge
 /** Mount the component with stub command and tool services. */
 async function mount(config: Partial<Config> = {}) {
   const ctx = new Context()
-  ctx.provide('commands', { register: () => () => {} } as never)
+  ctx.provide('commands', {
+    register: (command: { handler: typeof commandHandler }) => {
+      commandHandler = command.handler
+      return () => {}
+    },
+  } as never)
   ctx.provide('tools', {
     schemas: () => AVAILABLE.map((name) => ({ name })),
     restrict: (filter: { deny?: readonly string[] }) => {
@@ -116,11 +122,43 @@ async function stored(): Promise<{ sessions: number; tools: Record<string, { idl
 }
 
 describe('mounting', () => {
-  it('is off unless enabled', async () => {
-    const ctx = new Context()
-    apply(ctx, { enabled: false, idleSessions: 5, maxHidden: 8, protected: [] })
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(ctx.tePrune).toBeUndefined()
+  it('measures without hiding when disabled', async () => {
+    const ctx = await mount({ enabled: false })
+    expect(ctx.tePrune).toBeDefined()
+    await session(ctx, 's1', ['bash'])
+    const state = await stored()
+    expect(state.tools['web_search']?.idle).toBe(1)
+    expect(restricted).toEqual([])
+  })
+})
+
+describe('dry run', () => {
+  it('previews the candidates without hiding anything', async () => {
+    const ctx = await mount({ enabled: false, idleSessions: 1 })
+    await session(ctx, 's1', ['bash'])
+    const text = await ctx.tePrune.preview(agentOf(sessionOf('s2'), toolsStub) as never)
+    expect(text).toContain('web_search')
+    expect(text).toContain('Nothing is hidden until')
+    expect(text).toContain('schema tokens per request')
+    expect(restricted).toEqual([])
+  })
+
+  it('says so when nothing would be hidden', async () => {
+    const ctx = await mount({ enabled: false, idleSessions: 5 })
+    await session(ctx, 's1', ['bash'])
+    const text = await ctx.tePrune.preview(agentOf(sessionOf('s2'), toolsStub) as never)
+    expect(text).toContain('Nothing would be hidden')
+  })
+
+  it('answers the dry-run argument', async () => {
+    const ctx = await mount({ idleSessions: 1 })
+    await session(ctx, 's1', ['bash'])
+    const result = await commandHandler!({
+      agent: agentOf(sessionOf('s2'), toolsStub),
+      rawInput: 'dry-run',
+    } as never)
+    expect(result.text).toContain('web_search')
+    expect(restricted).toEqual([])
   })
 })
 

@@ -166,6 +166,14 @@ is lifted when the session ends.
   request prefix, so hiding tools changes what the provider can reuse. The
   decision is made once at session start and held for the whole session, which
   keeps the prefix stable inside a session.
+- Measuring is always on. A disabled prune still records the counters (tool
+  names and how often they were used, nothing else), because those counters are
+  the only way to answer whether enabling it is worth it; `enabled` decides
+  whether a tool is actually hidden.
+- `/te-prune dry-run` lists what the next session would hide, with an estimated
+  token saving. The estimate uses characters / 4, and the output says so along
+  with the one-off cost: the first request after the set changes pays full price
+  for the prefix.
 - Never hides the harness basics (shell, edit, read, subagents, jobs, …), and
   `maxHidden` bounds the damage to 8 tools per session.
 - `/te-prune` shows idle counters; `/te-prune restore` gives tools back and

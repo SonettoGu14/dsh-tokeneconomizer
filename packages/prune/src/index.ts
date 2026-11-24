@@ -25,7 +25,10 @@ import { join } from 'node:path'
 
 /** Settings for the pruning component. */
 export interface Config {
-  /** Off by default: hiding a tool changes the request prefix. */
+  /**
+   * Off by default: hiding a tool changes the request prefix. Counters are
+   * recorded either way, which is what makes the decision reversible.
+   */
   enabled: boolean
   /** Sessions a tool may stay idle before it becomes a candidate. */
   idleSessions: number
@@ -137,6 +140,19 @@ function visibleTools(ctx: Context): string[] {
   return tools.schemas().map((schema) => schema.name)
 }
 
+/**
+ * Rough token cost of a tool schema: the chars / 4 rule the rest of the suite
+ * uses, because no tokenizer is reachable from the plugin host.
+ */
+function estimateTokens(value: unknown): number {
+  return Math.ceil(JSON.stringify(value).length / 4)
+}
+
+/** 1234 -> 1.2k. Exact numbers in a preview would claim precision there is none of. */
+function shortTokens(tokens: number): string {
+  return tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens)
+}
+
 /** Where one repository's pruning state lives. */
 function repoPrunePath(key: string): string {
   return join(stateRoot(), 'repos', repoKeyDirName(key), 'prune.json')
@@ -190,8 +206,8 @@ export class Prune extends Service {
     this.ctx.effect(() =>
       this.ctx.commands.register({
         name: 'te-prune',
-        description: 'Show or restore tools hidden by dsh-te-prune',
-        input: { hint: 'restore' },
+        description: 'Show the idle counters, preview or restore tool hiding',
+        input: { hint: 'restore | dry-run' },
         handler: async (invocation) => {
           const session = invocation.agent.session
           // A resumed session may have no in-memory state yet; load it so the
@@ -200,6 +216,9 @@ export class Prune extends Service {
           const raw = invocation.rawInput.trim().toLowerCase()
           if (raw === 'restore') {
             return { kind: 'success', text: await this.restore(session) }
+          }
+          if (raw === 'dry-run' || raw === '--dry-run') {
+            return { kind: 'success', text: await this.preview(invocation.agent) }
           }
           return { kind: 'success', text: this.report(session) }
         },
@@ -264,6 +283,8 @@ export class Prune extends Service {
 
   /** Hide this session's candidates, once, before the tools are assembled. */
   private async maybeRestrict(agent: Agent): Promise<void> {
+    // Measuring is always on; only hiding is opt-in.
+    if (!this.config.enabled) return
     const session = agent.session
     const watch = this.watchOf(session)
     if (watch.decided) return
@@ -380,6 +401,45 @@ export class Prune extends Service {
     }
   }
 
+  /**
+   * What the next session would hide, and roughly what that saves.
+   *
+   * Answers the question the counters exist for: is enabling this worth it? The
+   * counters and the candidate list are exact; the token figures are chars / 4
+   * estimates, and the last line says the part estimates cannot capture: the
+   * first request after the set changes pays full price for the prefix.
+   */
+  async preview(agent: Agent): Promise<string> {
+    const session = agent.session
+    const key = resolveRepoKey(session.header?.cwd ?? process.cwd()).key
+    const repo = await this.repoOf(session)
+    const tools = agent.ctx.get('tools') as ToolsService | undefined
+    const schemas = tools?.schemas() ?? []
+    const available = schemas.map((schema) => schema.name)
+    const deny = this.candidates(repo, available)
+    const sizes = new Map(schemas.map((schema) => [schema.name, estimateTokens(schema)]))
+    const total = schemas.reduce((sum, schema) => sum + estimateTokens(schema), 0)
+    if (deny.length === 0) {
+      return `Nothing would be hidden: no tool is idle for ${this.config.idleSessions} sessions in ${key} (${repo.sessions} recorded).`
+    }
+    const saved = deny.reduce((sum, tool) => sum + (sizes.get(tool) ?? 0), 0)
+    const share = total === 0 ? 0 : Math.round((saved / total) * 100)
+    const rows = deny.map((tool) => {
+      const record = repo.tools[tool]
+      const idle = record === undefined ? 0 : record.idle
+      const uses = record === undefined ? 0 : record.uses
+      return `${tool}  idle ${idle}/${this.config.idleSessions}  uses ${uses}  ~${shortTokens(sizes.get(tool) ?? 0)} tokens`
+    })
+    const head = `Dry run for ${key}: ${repo.sessions} sessions recorded, hides at ${this.config.idleSessions} idle`
+    const line = `Would hide ${deny.length} of ${available.length} tools: ~${shortTokens(saved)} schema tokens per request (${share}% of the tool block).`
+    const off = this.config.enabled
+      ? 'This is what the next session will hide.'
+      : 'Nothing is hidden until enabled: true; the counters keep accumulating either way.'
+    const cost =
+      'The first request after the set changes pays full price for the prompt prefix once; the saving starts after that request.'
+    return [head, '', ...rows, '', line, off, cost].join('\n')
+  }
+
   /** Human-readable listing for `/te-prune`. */
   report(session: Session): string {
     const key = resolveRepoKey(session.header?.cwd ?? process.cwd()).key
@@ -397,7 +457,9 @@ export class Prune extends Service {
         const state = repo.restored.includes(tool)
           ? 'kept'
           : record.idle >= this.config.idleSessions
-            ? 'hidden next session'
+            ? this.config.enabled
+              ? 'hidden next session'
+              : 'would hide'
             : 'visible'
         return `${tool.padEnd(width)} idle ${String(record.idle).padStart(2)}/${this.config.idleSessions}  uses ${String(record.uses).padStart(3)}  ${state}`
       })
@@ -418,8 +480,15 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Mount the component. */
+/**
+ * Mount the component.
+ *
+ * Mounted even when disabled: the counters are the only way to answer whether
+ * enabling it is worth it, and `dry-run` is for the people who have not enabled
+ * it yet. `enabled` decides whether a tool is hidden, not whether anything is
+ * measured — a disabled prune still writes prune.json, which holds tool names
+ * and counters and nothing else.
+ */
 export function apply(ctx: Context, config: Config): void {
-  if (!config.enabled) return
   ctx.plugin(Prune, config)
 }
