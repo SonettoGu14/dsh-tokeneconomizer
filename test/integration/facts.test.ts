@@ -50,7 +50,7 @@ describe('facts, end to end', () => {
     const state = harness.readRepo('facts.json') as
       | { version: number; facts: { injectedTasks: number[]; injectedTokens: number }[] }
       | undefined
-    expect(state?.version).toBe(2)
+    expect(state?.version).toBe(3)
     expect(state?.facts[0]?.injectedTasks).toEqual([4])
     expect(state?.facts[0]?.injectedTokens).toBeGreaterThan(0)
   })
@@ -123,7 +123,11 @@ describe('facts, end to end', () => {
     await harness.end(agent)
 
     const state = harness.readRepo('facts.json') as
-      | { tasks: number; facts: { key: string; family: string; state: string }[] }
+      | {
+          tasks: number
+          facts: { key: string; family: string; state: string }[]
+          learning: { calls: number; failed: number; classified: number; parsed: number; repaired: number }
+        }
       | undefined
     expect(state).toBeDefined()
     expect(state?.tasks).toBe(1)
@@ -131,5 +135,16 @@ describe('facts, end to end', () => {
     expect(learned).toBeDefined()
     expect(learned?.family).toBe('form-repair')
     expect(learned?.state).toBe('candidate')
+
+    // The funnel that produced it is stored too: it is the only answer to
+    // "why is this list empty" in a repository where nothing was repaired.
+    expect(state?.learning).toEqual({
+      calls: 2,
+      failed: 1,
+      classified: 1,
+      parsed: 1,
+      repaired: 1,
+      candidates: 1,
+    })
   })
 })

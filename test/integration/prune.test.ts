@@ -1,7 +1,23 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { startHarness, type Harness } from './harness.ts'
 import type { ToolFixture } from './harness.ts'
+
+/**
+ * The `enabled` the install-all bundle ships for prune.
+ *
+ * Read rather than hardcoded: the value is the contract this test guards, and a
+ * default that changes has to change here too instead of silently untested.
+ */
+function shippedEnabled(): boolean {
+  const path = fileURLToPath(new URL('../../packages/bundle/cordis.patch.yml', import.meta.url))
+  const match = /- id: te-prune[\s\S]*?enabled:\s*(true|false)/.exec(readFileSync(path, 'utf8'))
+  if (match?.[1] === undefined) throw new Error('the bundle no longer declares a te-prune config')
+  return match[1] === 'true'
+}
 
 let harness: Harness | undefined
 
@@ -83,6 +99,43 @@ describe('prune, end to end', () => {
     expect(names).toContain('acp_status')
     expect(names).toContain('acp_cache')
     expect(names).not.toContain('idle_tool')
+  })
+
+  it('mounts, measures and answers its command with the bundle default', async () => {
+    // 0.4.0 returned from `apply` when disabled, so the entry looked enabled in
+    // the Plugins page while the service and the command never existed. The
+    // shipped default is the configuration every user starts in, so it is the
+    // one that has to be exercised.
+    const enabled = shippedEnabled()
+    harness = await startHarness({
+      components: ['prune'],
+      prune: { enabled },
+      tools: [tool('idle_tool'), tool('active_tool')],
+    })
+    seedIdle(harness, { idle_tool: 20 })
+
+    const agent = await harness.agent()
+    await harness.turn(agent)
+
+    expect(harness.ctx.get('tePrune')).toBeDefined()
+    const names = harness.requests[0]!.toolNames
+    if (enabled) expect(names).not.toContain('idle_tool')
+    else expect(names).toContain('idle_tool')
+
+    // The command existing is what /te and the slash menu both depend on.
+    const result = (await harness.command(agent, '/te-prune')) as { kind: string; text?: string }
+    expect(result).toBeDefined()
+    expect(result.kind).toBe('success')
+    expect(result.text).toContain('idle_tool')
+
+    // Measuring is independent of hiding: the counters still land on disk.
+    await harness.end(agent)
+    const state = harness.readRepo('prune.json') as
+      | { sessions: number; tools: Record<string, { idle: number }> }
+      | undefined
+    // Six seeded sessions plus the one that just ended.
+    expect(state?.sessions).toBe(7)
+    expect(state?.tools.idle_tool).toBeDefined()
   })
 
   it('never hides a protected tool, whatever its idle count', async () => {
