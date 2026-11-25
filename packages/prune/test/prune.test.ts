@@ -369,14 +369,24 @@ describe('reporting', () => {
   it('lists idle counters and the next decision', async () => {
     const ctx = await mount({ idleSessions: 2 })
     for (const id of ['s1', 's2']) await session(ctx, id)
-    const text = ctx.tePrune.report(sessionOf('s3'))
+    const text = ctx.tePrune.report(agentOf(sessionOf('s3'), ctx.get('tools')) as never)
     expect(text).toContain('web_search')
     expect(text).toContain('hidden next session')
     expect(text).not.toContain('bash')
   })
 
+  it('prices what the next session would hide', async () => {
+    const ctx = await mount({ idleSessions: 2 })
+    for (const id of ['s1', 's2']) await session(ctx, id)
+    const text = ctx.tePrune.report(agentOf(sessionOf('s3'), ctx.get('tools')) as never)
+    // The decision needs the worth of the change, not only the count.
+    expect(text).toMatch(/Hiding \d+ of \d+ tools saves ~[\d.]+k? schema tokens per request/)
+    expect(text).toContain('pays the prefix once')
+    expect(text).toMatch(/~[\d.]+k? tokens/)
+  })
+
   it('says so when nothing is measured', async () => {
     const ctx = await mount()
-    expect(ctx.tePrune.report(sessionOf('s1'))).toContain('Nothing measured yet')
+    expect(ctx.tePrune.report(agentOf(sessionOf('s1'), ctx.get('tools')) as never)).toContain('Nothing measured yet')
   })
 })

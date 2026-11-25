@@ -220,7 +220,7 @@ export class Prune extends Service {
           if (raw === 'dry-run' || raw === '--dry-run') {
             return { kind: 'success', text: await this.preview(invocation.agent) }
           }
-          return { kind: 'success', text: this.report(session) }
+          return { kind: 'success', text: this.report(invocation.agent) }
         },
       }),
     )
@@ -440,14 +440,27 @@ export class Prune extends Service {
     return [head, '', ...rows, '', line, off, cost].join('\n')
   }
 
-  /** Human-readable listing for `/te-prune`. */
-  report(session: Session): string {
+  /**
+   * Human-readable listing for `/te-prune`.
+   *
+   * The counters answer "what is idle"; the last line answers "what would that be
+   * worth", which is the question the decision actually needs. Sizes are the same
+   * chars/4 estimate the dry run uses, and the one-off cost of changing the tool
+   * set stays in view so the saving is not read as free.
+   */
+  report(agent: Agent): string {
+    const session = agent.session
     const key = resolveRepoKey(session.header?.cwd ?? process.cwd()).key
     const repo = this.repos.get(key)
     if (repo === undefined || repo.sessions === 0) return `Nothing measured yet for ${key}.`
     const watch = this.watching.get(session.id)
     const keep = this.protectedNames()
     const candidates = Object.entries(repo.tools).filter(([tool]) => !keep.has(tool))
+    const schemas = (agent.ctx.get('tools') as ToolsService | undefined)?.schemas() ?? []
+    const available = schemas.map((schema) => schema.name)
+    const sizes = new Map(schemas.map((schema) => [schema.name, estimateTokens(schema)]))
+    const total = schemas.reduce((sum, schema) => sum + estimateTokens(schema), 0)
+    const deny = new Set(this.candidates(repo, available))
     // Width from the data: an MCP tool name is routinely longer than the 18 the
     // fixed header assumed, and a ragged table reads as broken output.
     const width = Math.max(18, ...candidates.map(([tool]) => tool.length))
@@ -461,11 +474,20 @@ export class Prune extends Service {
               ? 'hidden next session'
               : 'would hide'
             : 'visible'
-        return `${tool.padEnd(width)} idle ${String(record.idle).padStart(2)}/${this.config.idleSessions}  uses ${String(record.uses).padStart(3)}  ${state}`
+        const size = deny.has(tool) ? `  ~${shortTokens(sizes.get(tool) ?? 0)} tokens` : ''
+        return `${tool.padEnd(width)} idle ${String(record.idle).padStart(2)}/${this.config.idleSessions}  uses ${String(record.uses).padStart(3)}  ${state}${size}`
       })
     const head = `Pruning for ${key} (${repo.sessions} sessions, hides at ${this.config.idleSessions} idle)`
     const hidden = watch?.hidden.length ? `Hidden this session: ${watch.hidden.join(', ')}` : undefined
-    return [head, hidden, ...rows].filter((line) => line !== undefined).join('\n')
+    const saved = [...deny].reduce((sum, tool) => sum + (sizes.get(tool) ?? 0), 0)
+    const share = total === 0 ? 0 : Math.round((saved / total) * 100)
+    const value =
+      deny.size === 0
+        ? 'Nothing is idle enough to hide yet; the counters keep accumulating.'
+        : schemas.length === 0
+          ? undefined
+          : `Hiding ${deny.size} of ${available.length} tools saves ~${shortTokens(saved)} schema tokens per request (${share}% of the tool block). The first request after the set changes pays the prefix once.`
+    return [head, hidden, ...rows, '', value].filter((line) => line !== undefined).join('\n')
   }
 
   /** Whether any session is currently being watched (used by tests). */
