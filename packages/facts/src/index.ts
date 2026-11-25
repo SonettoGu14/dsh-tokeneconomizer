@@ -30,11 +30,11 @@ declare module '@deepseek-ai/dsh-llm' {
 import type { ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import {
   NEW_LIFECYCLE,
+  analyzeFacts,
   confirm,
   contradict,
   contradicted,
   exercised,
-  extractFacts,
   formatTokens,
   injectable,
   injectionSplit,
@@ -48,6 +48,7 @@ import {
   wasteRecurred,
   wastedCalls,
   writeJsonAtomic,
+  type FactDiagnostics,
   type FactLifecycle,
   type ShellCall,
 } from 'dsh-te-core'
@@ -79,13 +80,29 @@ interface StoredFact extends FactLifecycle {
   readonly text: string
 }
 
+/**
+ * The funnel a repository's sessions have gone through, summed.
+ *
+ * Kept next to the facts rather than inside them: it answers "why is this list
+ * empty", which no individual fact can.
+ */
+interface Learning extends FactDiagnostics {
+  /** Candidates the extractor proposed, including ones already known. */
+  candidates: number
+}
+
+/** A repository that has not settled a session since this record was written. */
+const NO_LEARNING: Learning = { calls: 0, failed: 0, classified: 0, parsed: 0, repaired: 0, candidates: 0 }
+
 /** The learned state of one repository. */
 interface RepoFacts {
-  version: 2
+  version: 3
   key: string
   /** Sessions that ended in this repository; the lifecycle clock. */
   tasks: number
   facts: StoredFact[]
+  /** Why there are (or are not) facts here, summed over settled sessions. */
+  learning: Learning
 }
 
 /** One fact that was actually shown to the model, and what its line cost. */
@@ -142,6 +159,49 @@ function isStoredFact(value: unknown): value is StoredFact {
     typeof fact.fired === 'number' &&
     typeof fact.firedWaste === 'number'
   )
+}
+
+/** One non-negative counter, or zero when the stored value is not one. */
+function counter(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
+}
+
+/** Read the learning funnel, tolerating a hand-edited or older record. */
+function readLearning(value: unknown): Learning {
+  if (value === null || typeof value !== 'object') return NO_LEARNING
+  const raw = value as Partial<Learning>
+  return {
+    calls: counter(raw.calls),
+    failed: counter(raw.failed),
+    classified: counter(raw.classified),
+    parsed: counter(raw.parsed),
+    repaired: counter(raw.repaired),
+    candidates: counter(raw.candidates),
+  }
+}
+
+/**
+ * Name the first step of the funnel that is empty.
+ *
+ * The order matters: each sentence is only true once every earlier one is not,
+ * so the reader is told the earliest thing that stopped, not the last.
+ */
+function verdict(learning: Learning, stored: number): string {
+  if (learning.calls === 0) {
+    return 'No shell calls recorded: only tools named bash or bash_persistent carry a command.'
+  }
+  if (learning.failed === 0) return 'No shell call failed, so there is nothing to repair.'
+  if (learning.classified === 0) {
+    return 'Failures happened but none named a recognised cause; an unnamed failure is not evidence.'
+  }
+  if (learning.parsed === 0) return 'Failures were named but the command has no recognisable program.'
+  if (learning.repaired === 0) {
+    return 'Named failures happened, but no later call in the same session succeeded with a different form of the same intent.'
+  }
+  if (stored === 0) {
+    return 'Repairs were found, but no fact is stored now: they were retired or replaced. /te-facts shows the record.'
+  }
+  return 'Facts are being learned; run /te-facts stats to see whether they pay for themselves.'
 }
 
 /** Fill the bookkeeping a pre-0.2.0 record does not carry. */
@@ -295,15 +355,17 @@ export class Facts extends Service {
     this.ctx.effect(() =>
       this.ctx.commands.register({
         name: 'te-facts',
-        description: 'List repository facts learned by dsh-te-facts, or their statistics',
-        input: { hint: 'stats' },
+        description: 'List repository facts learned by dsh-te-facts, their statistics, or why there are none',
+        input: { hint: 'stats | why' },
         handler: async (invocation) => {
           const session = invocation.agent.session
           // A resumed session has an empty cache; load it so the report answers
           // with what was learned instead of claiming nothing was.
           await this.repoOf(session)
           const scope = invocation.rawInput.trim().toLowerCase()
-          return { kind: 'success', text: scope === 'stats' ? this.stats(session) : this.report(session) }
+          const text =
+            scope === 'why' ? this.why(session) : scope === 'stats' ? this.stats(session) : this.report(session)
+          return { kind: 'success', text }
         },
       }),
     )
@@ -361,6 +423,27 @@ export class Facts extends Service {
   }
 
   /**
+   * Render `/te-facts why`: the funnel that turned shell calls into facts.
+   *
+   * The list view answers "what do I know" and `stats` answers "is it earning
+   * its keep". Neither can explain an empty list, which is the state every
+   * repository starts in and the one that most often looks like a bug.
+   */
+  why(session: Session): string {
+    const key = resolveRepoKey(session.header?.cwd ?? process.cwd()).key
+    const repo = this.repos.get(key)
+    const learning = repo?.learning ?? NO_LEARNING
+    const stored = repo?.facts.length ?? 0
+    return [
+      `Facts funnel for ${key} — ${repo?.tasks ?? 0} sessions`,
+      `  shell   ${learning.calls} calls · ${learning.failed} failed · ${learning.classified} named · ${learning.parsed} parseable`,
+      `  repair  ${learning.repaired} same-intent repairs · ${learning.candidates} candidates`,
+      `  stored  ${stored} facts`,
+      `  ${verdict(learning, stored)}`,
+    ].join('\n')
+  }
+
+  /**
    * Counts for the bundle's `/te` overview.
    *
    * The full table stays in `/te-facts`; this is the summary a reader needs to
@@ -403,15 +486,19 @@ export class Facts extends Service {
     const key = resolveRepoKey(session.header?.cwd ?? process.cwd()).key
     const cached = this.repos.get(key)
     if (cached !== undefined) return cached
-    const stored = await readJson<{ version?: number; tasks?: number; facts?: unknown[] }>(repoFactsPath(key))
-    // v1 is readable: the fields this version adds are filled in place rather
-    // than the whole repository being thrown away.
-    const readable = stored !== undefined && (stored.version === 1 || stored.version === 2) && Array.isArray(stored.facts)
+    const stored = await readJson<{ version?: number; tasks?: number; facts?: unknown[]; learning?: unknown }>(
+      repoFactsPath(key),
+    )
+    // v1 and v2 are readable: the fields this version adds are filled in place
+    // rather than the whole repository being thrown away.
+    const readable =
+      stored !== undefined && (stored.version === 1 || stored.version === 2 || stored.version === 3) && Array.isArray(stored.facts)
     const repo: RepoFacts = {
-      version: 2,
+      version: 3,
       key,
       tasks: readable && typeof stored.tasks === 'number' ? stored.tasks : 0,
       facts: readable ? (stored?.facts ?? []).filter(isStoredFact).map(withHistory) : [],
+      learning: readable ? readLearning(stored?.learning) : NO_LEARNING,
     }
     this.repos.set(key, repo)
     return repo
@@ -475,7 +562,8 @@ export class Facts extends Service {
     const repo = await this.repoOf(session)
     const ordinal = repo.tasks + 1
     const calls = watch?.calls ?? []
-    const learned = new Map(extractFacts(calls).map((candidate) => [candidate.key, candidate]))
+    const analysis = analyzeFacts(calls)
+    const learned = new Map(analysis.candidates.map((candidate) => [candidate.key, candidate]))
 
     for (const fact of [...repo.facts]) {
       if (fact.state === 'retired') continue
@@ -539,6 +627,18 @@ export class Facts extends Service {
         return score(left, ordinal) - score(right, ordinal)
       })
       repo.facts = ranked.slice(ranked.length - FACT_CAP)
+    }
+
+    // Sum the funnel before the write: this is the record that answers "why is
+    // the list still empty" without a debugger attached.
+    const learning = repo.learning
+    repo.learning = {
+      calls: learning.calls + analysis.calls,
+      failed: learning.failed + analysis.failed,
+      classified: learning.classified + analysis.classified,
+      parsed: learning.parsed + analysis.parsed,
+      repaired: learning.repaired + analysis.repaired,
+      candidates: learning.candidates + analysis.candidates.length,
     }
 
     repo.tasks = ordinal

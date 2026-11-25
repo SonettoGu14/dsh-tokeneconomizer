@@ -75,6 +75,7 @@ export {
 export type { FactLifecycle, FactState, InjectionSplit, InjectionWindow } from './facts.ts'
 
 export {
+  analyzeFacts,
   contradicted,
   errorClassOf,
   exercised,
@@ -85,4 +86,4 @@ export {
   wasteRecurred,
   wastedCalls,
 } from './shell.ts'
-export type { FactCandidate, ShellCall } from './shell.ts'
+export type { FactAnalysis, FactCandidate, FactDiagnostics, ShellCall } from './shell.ts'

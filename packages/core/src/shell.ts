@@ -279,24 +279,61 @@ function keyParts(key: string): { family: string; first: string; second?: string
 }
 
 /**
+ * How far one session's shell calls got toward a fact.
+ *
+ * A repository with no facts is not evidence that the mechanism is broken: it
+ * can mean no shell call failed, that no failure named its cause, that the
+ * failing command had no recognisable program, or that nothing was repaired.
+ * These counts are what separates those cases.
+ */
+export interface FactDiagnostics {
+  /** Shell calls recorded; only calls carrying a command are counted. */
+  calls: number
+  /** Calls the tool reported as failed. */
+  failed: number
+  /** Failures whose output names a recognised error class. */
+  classified: number
+  /** Classified failures whose command reduces to a form and an intent. */
+  parsed: number
+  /** Classified, parsed failures a later same-intent call repaired. */
+  repaired: number
+}
+
+/** One session's candidate facts, with the counts that explain them. */
+export interface FactAnalysis extends FactDiagnostics {
+  candidates: FactCandidate[]
+}
+
+/**
  * Propose facts from one session's shell calls.
  *
  * Only same-session repairs count: failure first, then a different form of the
  * same intent that succeeded. A claim is only made when the failure has a name.
  *
  * @param calls - the session's shell calls in order.
- * @returns candidate facts, one per distinct repair.
+ * @returns the candidates, one per distinct repair, plus the funnel that
+ * produced them.
  */
-export function extractFacts(calls: readonly ShellCall[]): FactCandidate[] {
+export function analyzeFacts(calls: readonly ShellCall[]): FactAnalysis {
   const found = new Map<string, FactCandidate>()
+  const diagnostics: FactDiagnostics = {
+    calls: calls.length,
+    failed: 0,
+    classified: 0,
+    parsed: 0,
+    repaired: 0,
+  }
 
   for (let index = 0; index < calls.length; index += 1) {
     const failed = calls[index]
     if (failed === undefined || failed.ok) continue
+    diagnostics.failed += 1
     const errorClass = errorClassOf(failed.output)
     if (errorClass === undefined) continue
+    diagnostics.classified += 1
     const failedParsed = parseCached(failed.command)
     if (failedParsed === undefined) continue
+    diagnostics.parsed += 1
     const { form: failedForm, intent } = failedParsed
 
     const later = calls.slice(index + 1)
@@ -309,6 +346,7 @@ export function extractFacts(calls: readonly ShellCall[]): FactCandidate[] {
         (call) => call.ok && intentOf(call.command) === intent && setsEnv(call.command, envName),
       )
       if (working !== undefined) {
+        diagnostics.repaired += 1
         const key = `env-value:${clip(failedForm)}:${clip(envName)}`
         if (!found.has(key)) {
           found.set(key, {
@@ -330,6 +368,7 @@ export function extractFacts(calls: readonly ShellCall[]): FactCandidate[] {
     if (repaired === undefined) continue
     const workingForm = formOf(repaired.command)
     if (workingForm === undefined) continue
+    diagnostics.repaired += 1
     const key = `form-repair:${clip(intent)}:${clip(failedForm)}`
     if (found.has(key)) continue
     found.set(key, {
@@ -340,7 +379,16 @@ export function extractFacts(calls: readonly ShellCall[]): FactCandidate[] {
     })
   }
 
-  return [...found.values()]
+  return { ...diagnostics, candidates: [...found.values()] }
+}
+
+/**
+ * Propose facts from one session's shell calls.
+ * @param calls - the session's shell calls in order.
+ * @returns candidate facts, one per distinct repair.
+ */
+export function extractFacts(calls: readonly ShellCall[]): FactCandidate[] {
+  return analyzeFacts(calls).candidates
 }
 
 /**

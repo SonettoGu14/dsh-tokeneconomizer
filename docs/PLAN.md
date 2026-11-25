@@ -160,6 +160,12 @@ The reports are **built** (they read the v2 records and change no behaviour):
   median but not from the totals) and how many sessions the 400-entry cap dropped.
 - `/te-cost repos` — every repository the ledger knows, most expensive first, so a
   trend can be asked for without reading the state directory.
+- `/te-facts why` — the funnel that turns shell calls into facts (calls, failures,
+  named failures, parseable ones, repairs), with the first empty stage named. It
+  exists because the first real installation recorded 18 sessions and learned
+  nothing: an empty list is indistinguishable from a broken component without it.
+  The counts live in `facts.json` v3 (`learning`), so a repository that never
+  repairs anything can say so.
 
 Still open in P1: to show *which* facts were retired and why, the retirement
 reason has to be recorded (`recordInjection`/`contradict` keep the counts, not the

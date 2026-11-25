@@ -151,6 +151,11 @@ stops being injected — and a later session that contradicts it retires it.
   observations that fact actually has. It reports absolute counts and says what it
   cannot know: there is no baseline error rate, so no improvement percentage is
   claimed.
+- `/te-facts why` explains an empty list: it prints the funnel this repository's
+  sessions have gone through — shell calls recorded, failures, failures that named
+  a cause, failures whose command had a recognisable program, repairs found — and
+  then names the first stage that is empty. Without it, "no facts yet" cannot be
+  told apart from "the component is broken".
 
 Ported constants: `K_PROMOTE=3`, `GAMMA=0.8`, `LAMBDA=5.0`, `FIRE_GATE=0.40`,
 `FIRE_MIN_N=4`.

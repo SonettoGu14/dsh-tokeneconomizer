@@ -61,7 +61,16 @@ async function learnSession(ctx: Context, id: string): Promise<void> {
 
 /** Read the stored facts of the throwaway repository. */
 async function storedFacts(): Promise<{
+  version: number
   tasks: number
+  learning: {
+    calls: number
+    failed: number
+    classified: number
+    parsed: number
+    repaired: number
+    candidates: number
+  }
   facts: {
     key: string
     state: string
@@ -506,5 +515,54 @@ describe('stats view', () => {
     const { registered } = await mountCapturing()
     const result = (await registered[0]?.handler({ agent: { session: sessionOf('s-empty') }, rawInput: 'stats' })) as { text: string }
     expect(result.text).toContain('No facts learned yet')
+  })
+})
+
+describe('the learning funnel', () => {
+  it('explains a repository that has never seen a shell call', async () => {
+    const ctx = await mount()
+    const text = ctx.teFacts.why(sessionOf('s-empty'))
+    expect(text).toContain('0 sessions')
+    expect(text).toContain('0 calls · 0 failed · 0 named · 0 parseable')
+    expect(text).toContain('No shell calls recorded')
+  })
+
+  it('names the stage where a named failure stopped', async () => {
+    const ctx = await mount()
+    const session = sessionOf('s1')
+    shell(ctx, session, 'pytest', false, 'bash: pytest: command not found')
+    await ctx.teFacts.settle(session)
+
+    const text = ctx.teFacts.why(session)
+    expect(text).toContain('1 calls · 1 failed · 1 named · 1 parseable')
+    expect(text).toContain('0 same-intent repairs · 0 candidates')
+    expect(text).toContain('no later call in the same session succeeded')
+  })
+
+  it('reports the repair and the fact it produced', async () => {
+    const ctx = await mount()
+    await learnSession(ctx, 's1')
+
+    const text = ctx.teFacts.why(sessionOf('s2'))
+    expect(text).toContain('1 same-intent repairs · 1 candidates')
+    expect(text).toContain('stored  1 facts')
+    expect(text).toContain('Facts are being learned')
+  })
+
+  it('persists the funnel so a later session can read it', async () => {
+    const ctx = await mount()
+    await learnSession(ctx, 's1')
+    await learnSession(ctx, 's2')
+
+    const state = await storedFacts()
+    expect(state.version).toBe(3)
+    expect(state.learning).toEqual({
+      calls: 4,
+      failed: 2,
+      classified: 2,
+      parsed: 2,
+      repaired: 2,
+      candidates: 2,
+    })
   })
 })

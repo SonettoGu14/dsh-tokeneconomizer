@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { errorClassOf, extractFacts, formOf, intentOf, missingEnvOf, wasteRecurred, wastedCalls } from '../src/index.ts'
+import {
+  analyzeFacts,
+  errorClassOf,
+  extractFacts,
+  formOf,
+  intentOf,
+  missingEnvOf,
+  wasteRecurred,
+  wastedCalls,
+} from '../src/index.ts'
 
 describe('intent', () => {
   it('looks through the way a tool was invoked', () => {
@@ -95,6 +104,52 @@ describe('extractFacts', () => {
       ok('python -m pytest'),
     ])
     expect(facts).toHaveLength(1)
+  })
+})
+
+describe('analyzeFacts', () => {
+  const failed = (command: string, output: string) => ({ command, ok: false, output })
+  const ok = (command: string) => ({ command, ok: true, output: '' })
+
+  it('counts every stage of the funnel that produced a candidate', () => {
+    const analysis = analyzeFacts([
+      ok('ls'),
+      failed('pytest -q', 'something odd happened'),
+      failed('   ', 'bash: : command not found'),
+      failed('jest --ci', 'bash: jest: command not found'),
+      ok('jest --ci'),
+      failed('pytest', 'bash: pytest: command not found'),
+      ok('python -m pytest'),
+    ])
+    expect(analysis.calls).toBe(7)
+    // Three named failures; the empty command has no program to describe, and
+    // `jest --ci` was retried in the same form, which is not a repair.
+    expect(analysis.failed).toBe(4)
+    expect(analysis.classified).toBe(3)
+    expect(analysis.parsed).toBe(2)
+    expect(analysis.repaired).toBe(1)
+    expect(analysis.candidates).toHaveLength(1)
+    expect(analysis.candidates[0]?.family).toBe('form-repair')
+  })
+
+  it('stops the funnel where it stopped', () => {
+    expect(analyzeFacts([])).toEqual({
+      calls: 0,
+      failed: 0,
+      classified: 0,
+      parsed: 0,
+      repaired: 0,
+      candidates: [],
+    })
+    const unnamed = analyzeFacts([failed('pytest', 'weird output')])
+    expect(unnamed.failed).toBe(1)
+    expect(unnamed.classified).toBe(0)
+    expect(unnamed.candidates).toEqual([])
+  })
+
+  it('agrees with extractFacts about the candidates', () => {
+    const calls = [failed('pytest -q', 'bash: pytest: command not found'), ok('python -m pytest -q')]
+    expect(extractFacts(calls)).toEqual(analyzeFacts(calls).candidates)
   })
 })
 
