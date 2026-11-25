@@ -1,6 +1,6 @@
 {
   "name": "dsh-te",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Installs the cost, facts and prune components and adds a /te overview. · 一次装齐成本记账、仓库事实与工具隐藏三个组件，并提供 /te 总览。",
   "keywords": [
     "dsh",

@@ -1,6 +1,6 @@
 {
   "name": "dsh-te-core",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Pure functions behind the ledger: pricing weights, token buckets, fact lifecycle, atomic storage. · 记账用的纯函数：定价权重、token 分桶、事实生命周期与原子存储。",
   "keywords": [
     "dsh",

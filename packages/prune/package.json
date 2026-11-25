@@ -1,6 +1,6 @@
 {
   "name": "dsh-te-prune",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Hides tools that stay idle across sessions (opt-in), with /te-prune. · 跨会话隐藏闲置工具（默认关闭），命令 /te-prune。",
   "keywords": [
     "dsh",
