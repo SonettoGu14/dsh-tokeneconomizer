@@ -1,6 +1,6 @@
 {
   "name": "dsh-te-facts",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Repository-scoped learned facts, injected as one message at the first step of each turn, with /te-facts. · 按仓库学习命令与环境变量修复，每个 turn 的第一步注入一条消息，命令 /te-facts。",
   "keywords": [
     "dsh",

@@ -1,6 +1,6 @@
 {
   "name": "dsh-te-cost",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Cache-weighted equivalent-token accounting for DSH sessions, with /te-cost. · 按缓存加权折算等效 token 的 DSH 会话记账，命令 /te-cost。",
   "keywords": [
     "dsh",
