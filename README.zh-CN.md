@@ -88,9 +88,12 @@ tag 就是发布。`.github/workflows/publish.yml` 会重跑 `pnpm verify`，拒
   会话不进中位数），并说明 400 条上限丢掉了多少条最老的。
   `/te-cost repos` 列出账本里所有仓库，按花费从高到低。state 目录是按 base64 key
   命名的，不列出来根本没法问某仓库的趋势。
+- `/te-cost ... --json` 把同一批数字输出成一份 JSON，四个范围都支持，脚本可直接读。
 
 未知模型回落到默认权重表，记为 `weightsSource: 'default'` 而不是报错：插件绝不能
-因为一张价格表就弄坏一次会话。
+因为一张价格表就弄坏一次会话。权重表是手工维护的，所以报告会把“最后核对日期”
+（`WEIGHTS_UPDATED`）印在命中的那一行旁边——过期的价格应该是看得见的，而不是默认
+它是当前的。
 
 ### `dsh-te-facts` — 按仓库学习事实，并会退役
 
@@ -143,7 +146,9 @@ remote，否则用工作目录）。
 - 也永不隐藏外部压缩器的工具（`compress`、`decompress`、`search_context`，以及
   billion-context 注册的那一套 `acp_*`，含把降采样图片取回原图的
   `acp_read_original_image`）；藏掉它们，模型就会去找一个不存在的工具。
-- `/te-prune` 显示闲置计数；`/te-prune restore` 把工具还回来，并记为永不隐藏。
+- `/te-prune` 显示闲置计数，并给下一次决定标价：这次改动每个请求能省多少 schema
+  token、占工具块的百分之几，逐条工具旁边是它的估算值。`/te-prune restore` 把工具
+  还回来，并记为永不隐藏。
 
 ## 配置
 

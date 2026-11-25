@@ -240,20 +240,22 @@ prediction, not a measurement. Use the P1 instrument to settle it:
 - if not, keep it off and say so in the README with the number that decided it.
 
 Also worth doing regardless: scan cost is currently one `schemas()` call per
-agent, which is fine; the `/te-prune` output should show *equivalent tokens
-saved* rather than a tool count, because that is the unit the user cares about.
+agent, which is fine; the `/te-prune` output now prices the next decision
+(schema tokens saved per request and their share of the tool block) instead of
+only counting tools, because that is the unit the user cares about.
 
 **Done when** the default has a number behind it and the README states it.
 
 ### P5 — cost depth
 
-- machine-readable output (`/te-cost --json`) so scripts can read the ledger;
+- ~~machine-readable output (`/te-cost --json`) so scripts can read the ledger;~~
+  done: all four scopes answer one JSON document;
 - per-session breakdown by bucket, so a spike can be attributed (context growth
   vs output vs cache misses);
-- a maintenance rule for the weights table: the table is a snapshot of published
-  ratios, so date-stamp the source in the file header and add a test that fails
-  when a *known* model id silently falls back to `default` (a new model should be
-  an explicit decision, not an accident);
+- a maintenance rule for the weights table: ~~date-stamp the source~~ done
+  (`WEIGHTS_UPDATED`, printed beside the resolved row and carried in JSON); still
+  wanted is a test that fails when a *known* model id silently falls back to
+  `default` (a new model should be an explicit decision, not an accident);
 - if DSH ever exposes a separate 1h cache-write bucket, price it (currently
   conservative: 1h writes are charged as 5m writes).
 
@@ -285,7 +287,7 @@ Known, accepted for now. Each item names why it is not yet fixed.
 | `history` keeps 400 sessions and drops the rest | an unbounded file in a state directory is worse than a trend starting 400 sessions ago; `droppedSessions` keeps the arithmetic honest | XS |
 | evidence window is a constant (20 tasks) | no data on what it should be; P1 can measure the effect of retiring later | S |
 | unknown model weights are maintained by hand | every published model needs a row; the P5 fallback test is the guard | S |
-| no CHANGELOG, no SECURITY.md | CI publishes and tags, so release notes live in the Release body; neither blocks a release | S |
+| `CHANGELOG.md` is written by hand, no SECURITY.md | the changelog is a short summary per release; a stale entry is caught when someone reads it, and neither blocks a release | S |
 | `lib/` is gitignored, so a fresh clone needs `pnpm build` before `link:` install works | documented in the README install section; a `prepare` script covers registry installs | — |
 | two Vitest configs share an alias block | acceptable duplication; unify only if a third project appears | XS |
 

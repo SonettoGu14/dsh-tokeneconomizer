@@ -33,7 +33,7 @@ Snapshot 2026-11-25:
   the GitHub Release. No npm token lives on any machine.
   `.github/workflows/verify.yml` runs the same `pnpm verify` on every push to
   master and every pull request.
-- `pnpm verify` green: 175 unit tests, 12 integration tests.
+- `pnpm verify` green: 179 unit tests, 12 integration tests.
 - 0.2.0 records what a trend needs: `cost.json` v2 keeps a per-session
   `history`, `facts.json` v2 keeps per-fact injection and waste token counts.
   Readers still accept v1 files.
@@ -51,7 +51,7 @@ Read it before starting feature work.
 pnpm install        # node >= 24.9, pnpm 11.28.5 via packageManager
 pnpm build          # tsc -b (project references; lib/ is gitignored)
 pnpm typecheck      # tsc -p tsconfig.test.json  (run after build)
-pnpm test           # vitest, packages/*/test (175 unit tests)
+pnpm test           # vitest, packages/*/test (179 unit tests)
 pnpm test:integration  # vitest, test/integration (12 tests, real DSH packages)
 pnpm verify         # build + typecheck + test + test:integration
 pnpm release:dry    # checks only: clean tree, free tag, verify, prints the plan
@@ -198,11 +198,11 @@ both `peerDependencies` and `devDependencies` (shared instances require both).
 
 ## Missing infrastructure (see `docs/PLAN.md`)
 
-- `/te-cost trend|repos`, `/te-facts stats|why` and `/te` exist as of 0.4.1;
-  the experiment they instrument (docs/MEASUREMENT.md) has not been run yet, and
-  `--json` is still missing.
-- No `CHANGELOG.md` and no changesets; the GitHub Release body and the commit
-  log are the release notes.
+- `/te-cost trend|repos|--json`, `/te-facts stats|why` and `/te` exist as of
+  0.4.1; the experiment they instrument (docs/MEASUREMENT.md) has not been run
+  yet.
+- `CHANGELOG.md` is written by hand at release time; there are no changesets and
+  the GitHub Release body is still the commit summary.
 - No `SECURITY.md`, even though the plugins read agent transcripts (they never
   write content to disk, and the state directory is `0700`).
 

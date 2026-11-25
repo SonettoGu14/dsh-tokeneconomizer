@@ -108,10 +108,14 @@ the provider's real price ratios.
   sessions the 400-entry cap dropped. `/te-cost repos` lists every repository the
   ledger knows, most expensive first; the state directory names its folders after
   a base64 key, which is not something a person can ask a trend for.
+- `/te-cost ... --json` returns the same numbers as one JSON document for a
+  script to read, for any of the four scopes.
 
 Unknown models fall back to a default weight table, recorded as
 `weightsSource: 'default'` rather than failing: a plugin must never be able to
-break a session over a price table.
+break a session over a price table. The table is maintained by hand, so the
+report prints the day it was last checked (`WEIGHTS_UPDATED`) beside the resolved
+row — a stale price should be visible, not assumed current.
 
 ### `dsh-te-facts` — repository facts, learned and retired
 
@@ -181,8 +185,10 @@ is lifted when the session ends.
   for the prefix.
 - Never hides the harness basics (shell, edit, read, subagents, jobs, …), and
   `maxHidden` bounds the damage to 8 tools per session.
-- `/te-prune` shows idle counters; `/te-prune restore` gives tools back and
-  records them as permanently kept.
+- `/te-prune` shows the idle counters and prices the next decision: the schema
+  tokens the change would save per request and their share of the tool block,
+  beside the per-tool estimate. `/te-prune restore` gives tools back and records
+  them as permanently kept.
 
 ## Configuration
 
