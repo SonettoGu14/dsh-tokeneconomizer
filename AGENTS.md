@@ -26,7 +26,7 @@ checkout is usually a sibling directory (`../TokenEconomizer`).
 
 Snapshot 2026-11-25:
 
-- five packages at `0.4.1`, published to npm under the **unscoped** names
+- five packages at `0.4.2`, published to npm under the **unscoped** names
   `dsh-te`, `dsh-te-core`, `dsh-te-cost`, `dsh-te-facts`, `dsh-te-prune`.
 - a release is a pushed tag: `.github/workflows/publish.yml` re-runs
   `pnpm verify`, publishes all five through OIDC Trusted Publishing and creates
