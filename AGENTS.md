@@ -13,7 +13,7 @@ Three independent plugins for DeepSeek Harness, plus a shared library:
 |---|---|---|
 | `dsh-te-core` | pure functions: pricing weights, token buckets, fact lifecycle, shell parsing, repository keys, atomic storage | — (library) |
 | `dsh-te-cost` | folds `session/event` usage into cache-weighted equivalent tokens; `/te-cost` | on |
-| `dsh-te-facts` | learns command-form and env-var repairs per repository and injects the live ones; `/te-facts` | on |
+| `dsh-te-facts` | learns command-form and env-var repairs per repository and injects the live ones; `/te-facts [stats\|why]` | on |
 | `dsh-te-prune` | hides tools that stayed idle for N sessions; `/te-prune`, with `dry-run` | **off** (measures only) |
 | `dsh-te` | installs all three and adds `/te`, a one-command status overview | — |
 
@@ -24,16 +24,16 @@ checkout is usually a sibling directory (`../TokenEconomizer`).
 
 ## Current state
 
-Snapshot 2026-11-18:
+Snapshot 2026-11-25:
 
-- five packages at `0.4.0`, published to npm under the **unscoped** names
+- five packages at `0.4.1`, published to npm under the **unscoped** names
   `dsh-te`, `dsh-te-core`, `dsh-te-cost`, `dsh-te-facts`, `dsh-te-prune`.
 - a release is a pushed tag: `.github/workflows/publish.yml` re-runs
   `pnpm verify`, publishes all five through OIDC Trusted Publishing and creates
   the GitHub Release. No npm token lives on any machine.
   `.github/workflows/verify.yml` runs the same `pnpm verify` on every push to
   master and every pull request.
-- `pnpm verify` green: 165 unit tests, 11 integration tests.
+- `pnpm verify` green: 175 unit tests, 12 integration tests.
 - 0.2.0 records what a trend needs: `cost.json` v2 keeps a per-session
   `history`, `facts.json` v2 keeps per-fact injection and waste token counts.
   Readers still accept v1 files.
@@ -51,8 +51,8 @@ Read it before starting feature work.
 pnpm install        # node >= 24.9, pnpm 11.28.5 via packageManager
 pnpm build          # tsc -b (project references; lib/ is gitignored)
 pnpm typecheck      # tsc -p tsconfig.test.json  (run after build)
-pnpm test           # vitest, packages/*/test (165 unit tests)
-pnpm test:integration  # vitest, test/integration (11 tests, real DSH packages)
+pnpm test           # vitest, packages/*/test (175 unit tests)
+pnpm test:integration  # vitest, test/integration (12 tests, real DSH packages)
 pnpm verify         # build + typecheck + test + test:integration
 pnpm release:dry    # checks only: clean tree, free tag, verify, prints the plan
 pnpm release patch  # bump all five, commit, tag vX, push; CI publishes
@@ -198,9 +198,9 @@ both `peerDependencies` and `devDependencies` (shared instances require both).
 
 ## Missing infrastructure (see `docs/PLAN.md`)
 
-- `/te-cost trend|repos`, `/te-facts stats` and `/te` exist as of 0.4.0; the
-  experiment they instrument (docs/MEASUREMENT.md) has not been run yet, and
-  `--json` is still missing. `/te-prune --dry-run` is still missing too.
+- `/te-cost trend|repos`, `/te-facts stats|why` and `/te` exist as of 0.4.1;
+  the experiment they instrument (docs/MEASUREMENT.md) has not been run yet, and
+  `--json` is still missing.
 - No `CHANGELOG.md` and no changesets; the GitHub Release body and the commit
   log are the release notes.
 - No `SECURITY.md`, even though the plugins read agent transcripts (they never
