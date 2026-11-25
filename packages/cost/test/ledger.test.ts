@@ -4,7 +4,7 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { repoKeyDirName, resolveRepoKey, stateRoot } from 'dsh-te-core'
+import { WEIGHTS_UPDATED, repoKeyDirName, resolveRepoKey, stateRoot } from 'dsh-te-core'
 import { CostLedger, apply } from '../src/index.ts'
 
 /** Mount the plugin and let Cordis finish loading its fiber. */
@@ -323,5 +323,80 @@ describe('repos report', () => {
       rawInput: 'repos',
     })) as { text: string }
     expect(result.text).toBe('No repositories recorded yet.')
+  })
+})
+
+describe('json output', () => {
+  it('answers the session view as one JSON document', async () => {
+    await mount(ctx, { enabled: true, persist: false })
+    const session = fakeSession('sess-json', '/tmp/repo')
+    ctx.emit('session/event', session, routeEvent('deepseek', 'deepseek-v4.1-flash'))
+    ctx.emit('session/event', session, usageEvent({ inputTokens: 1_000, cacheReadTokens: 10_000, outputTokens: 500 }))
+
+    const result = (await registrations[0]?.handler({ agent: { session }, rawInput: '--json' })) as { text: string }
+    const payload = JSON.parse(result.text) as Record<string, any>
+    expect(payload.scope).toBe('session')
+    expect(payload.sessionId).toBe('sess-json')
+    // The weights date travels with the number: the table is maintained by hand.
+    expect(payload.weights).toEqual({
+      model: 'deepseek-v4.1-flash',
+      source: 'deepseek-flash',
+      updated: WEIGHTS_UPDATED,
+    })
+    expect(payload.equivalent).toBeGreaterThan(0)
+    expect(payload.buckets.cacheRead).toBe(10_000)
+  })
+
+  it('keeps the positional scope when the flag follows it', async () => {
+    await mount(ctx, { enabled: true, persist: true })
+    const key = resolveRepoKey('/tmp/repo-dear').key
+    await writeRecord(key, {
+      equivalent: 90_000,
+      buckets: ZERO,
+      sessions: 4,
+      overhead: {},
+      updatedAt: '',
+      history: [],
+      droppedSessions: 0,
+    })
+    const session = fakeSession('sess-json-repo', '/tmp/repo-dear')
+    await ctx.teCost.repoSnapshot(session)
+
+    const result = (await registrations[0]?.handler({ agent: { session }, rawInput: 'repo --json' })) as { text: string }
+    const payload = JSON.parse(result.text) as Record<string, any>
+    expect(payload.scope).toBe('repo')
+    expect(payload.repo.equivalent).toBe(90_000)
+  })
+
+  it('answers the repos view as JSON with a total', async () => {
+    await mount(ctx, { enabled: true, persist: true })
+    await writeRecord(resolveRepoKey('/tmp/repo-cheap').key, {
+      equivalent: 1_000,
+      buckets: ZERO,
+      sessions: 1,
+      overhead: {},
+      updatedAt: '',
+      history: [],
+      droppedSessions: 0,
+    })
+    await writeRecord(resolveRepoKey('/tmp/repo-dear').key, {
+      equivalent: 90_000,
+      buckets: ZERO,
+      sessions: 4,
+      overhead: {},
+      updatedAt: '',
+      history: [],
+      droppedSessions: 0,
+    })
+
+    const result = (await registrations[0]?.handler({
+      agent: { session: fakeSession('sess-json-repos', '/tmp/repo-dear') },
+      rawInput: 'repos --json',
+    })) as { text: string }
+    const payload = JSON.parse(result.text) as Record<string, any>
+    expect(payload.scope).toBe('repos')
+    expect(payload.total).toBe(91_000)
+    expect(payload.repos).toHaveLength(2)
+    expect(payload.repos[0].equivalent).toBe(90_000)
   })
 })

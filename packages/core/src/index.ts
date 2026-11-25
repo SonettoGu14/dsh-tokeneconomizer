@@ -20,6 +20,7 @@ export {
   GPT_5_5_WEIGHTS,
   GPT_5_6_SOL_WEIGHTS,
   PRO_FOLDED_INTO_FLASH_AT_MS,
+  WEIGHTS_UPDATED,
   weightsFor,
 } from './pricing.ts'
 export type { TokenWeights } from './pricing.ts'

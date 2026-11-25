@@ -34,6 +34,7 @@ import {
   localDay,
   formatTokens,
   median,
+  parseArgs,
   readJson,
   repoKeyDirName,
   resolveRepoKey,
@@ -41,6 +42,7 @@ import {
   stateRoot,
   upsertHistory,
   weightsFor,
+  WEIGHTS_UPDATED,
   writeJsonAtomic,
   type CostAccumulator,
   type RepoIdentity,
@@ -238,18 +240,24 @@ export class CostLedger extends Service {
       ctx.commands.register({
         name: 'te-cost',
         description: 'Show cache-weighted equivalent-token spend for this session, repo, trend or repo list',
-        input: { hint: 'session | repo | trend | repos' },
+        input: { hint: 'session | repo | trend | repos [--json]' },
         handler: async (invocation) => {
           const session = invocation.agent.session
+          const { words, flags } = parseArgs(invocation.rawInput)
+          const scope = (words[0] ?? 'session').toLowerCase()
+          const json = flags.json === true
           // A resumed session has an empty in-memory cache; load the record so
           // `/te-cost repo` answers from disk instead of claiming there is none.
           await this.repoSnapshot(session)
           // The repository list is a scan of the state directory, not a view of
           // this session's repo, so it has no record to load first.
-          if (invocation.rawInput.trim().toLowerCase() === 'repos') {
-            return { kind: 'success', text: await this.reposReport() }
+          if (scope === 'repos') {
+            return { kind: 'success', text: json ? await this.reposJson() : await this.reposReport() }
           }
-          return { kind: 'success', text: this.report(session, invocation.rawInput) }
+          return {
+            kind: 'success',
+            text: json ? this.jsonReport(session, scope) : this.report(session, invocation.rawInput),
+          }
         },
       }),
     )
@@ -342,7 +350,8 @@ export class CostLedger extends Service {
 
     if (wantSession) {
       lines.push(`session ${session.id.slice(0, 8)}`)
-      lines.push(`  model ${state.model ?? 'unknown'} · weights ${state.weightsSource}`)
+      // The date is the honesty of the row: the table is maintained by hand.
+      lines.push(`  model ${state.model ?? 'unknown'} · weights ${state.weightsSource} (table ${WEIGHTS_UPDATED})`)
       lines.push(`  requests ${state.acc.messages}`)
       lines.push(`  equivalent ${formatTokens(state.acc.equivalent)} eq`)
       lines.push(
@@ -421,18 +430,57 @@ export class CostLedger extends Service {
   }
 
   /**
-   * List the repositories the ledger knows, most expensive first.
+   * Render `/te-cost --json`.
    *
-   * This is the entry point a trend needs: the state directory names its
-   * folders after a base64 key, which is not something a person can ask for.
+   * The same numbers as the text views in a shape a script can read. The weights
+   * date travels with every payload because the table is maintained by hand: a
+   * consumer should be able to tell how old the ratios behind the number are.
+   * @param session - the session the command was typed in.
+   * @param scope - `session`, `repo` or `trend`.
+   * @returns one JSON document.
    */
-  private async reposReport(): Promise<string> {
+  jsonReport(session: Session, scope: string): string {
+    const state = this.stateOf(session)
+    const repo = this.repoOf(session)
+    const record = repo === undefined ? undefined : this.repoCache.get(repo.key)
+    const base = { scope, key: repo?.key ?? null, weightsUpdated: WEIGHTS_UPDATED }
+    if (scope === 'repo') {
+      return JSON.stringify({ ...base, repo: record ?? null }, null, 2)
+    }
+    if (scope === 'trend') {
+      const own = record?.history.filter((entry) => entry.subagent !== true) ?? []
+      return JSON.stringify(
+        {
+          ...base,
+          sessions: record?.sessions ?? 0,
+          droppedSessions: record?.droppedSessions ?? 0,
+          days: record === undefined ? [] : dailyTrend(record.history),
+          medianEquivalent: median(own.map((entry) => entry.equivalent)),
+        },
+        null,
+        2,
+      )
+    }
+    return JSON.stringify(
+      {
+        ...base,
+        sessionId: session.id,
+        weights: { model: state.model ?? null, source: state.weightsSource, updated: WEIGHTS_UPDATED },
+        ...this.sessionSnapshot(session),
+      },
+      null,
+      2,
+    )
+  }
+
+  /** Every repository the ledger knows, most expensive first. */
+  private async repoRows(): Promise<{ key: string; sessions: number; equivalent: number }[]> {
     const root = join(stateRoot(), 'repos')
     let dirs: string[]
     try {
       dirs = await readdir(root)
     } catch {
-      return 'No repositories recorded yet.'
+      return []
     }
     const rows: { key: string; sessions: number; equivalent: number }[] = []
     for (const dir of dirs) {
@@ -441,8 +489,26 @@ export class CostLedger extends Service {
       const record = normalizeRecord(stored)
       rows.push({ key: record.key, sessions: record.sessions, equivalent: record.equivalent })
     }
-    if (rows.length === 0) return 'No repositories recorded yet.'
     rows.sort((left, right) => right.equivalent - left.equivalent)
+    return rows
+  }
+
+  /** `/te-cost repos --json`: the same scan, unformatted. */
+  private async reposJson(): Promise<string> {
+    const rows = await this.repoRows()
+    const total = rows.reduce((sum, row) => sum + row.equivalent, 0)
+    return JSON.stringify({ scope: 'repos', weightsUpdated: WEIGHTS_UPDATED, total, repos: rows }, null, 2)
+  }
+
+  /**
+   * List the repositories the ledger knows, most expensive first.
+   *
+   * This is the entry point a trend needs: the state directory names its
+   * folders after a base64 key, which is not something a person can ask for.
+   */
+  private async reposReport(): Promise<string> {
+    const rows = await this.repoRows()
+    if (rows.length === 0) return 'No repositories recorded yet.'
     const total = rows.reduce((sum, row) => sum + row.equivalent, 0)
     const lines = [`${rows.length} repositories · ${formatTokens(total)} eq total`, '']
     for (const row of rows) {

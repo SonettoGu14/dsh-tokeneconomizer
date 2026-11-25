@@ -118,6 +118,15 @@ export const GPT_5_6_SOL_WEIGHTS: TokenWeights = {
  */
 export const PRO_FOLDED_INTO_FLASH_AT_MS = Date.UTC(2026, 8, 14, 4, 0, 0)
 
+/**
+ * The day the table above was last checked against published prices.
+ *
+ * The weights are ratios maintained by hand, so a report without a date cannot
+ * be told apart from a stale one. Printed beside the resolved row, it says how
+ * much to trust the number rather than promising it is current.
+ */
+export const WEIGHTS_UPDATED = '2026-11-25'
+
 /** Model ids or families whose weights the table resolved. */
 export type WeightsSource =
   | 'deepseek-flash'
